@@ -1,0 +1,5 @@
+DMG build command
+sudo chmod +x /Users/yoon/Documents/VSTSDK_Product/VLC\ EQ/CodeSign.sh
+ln -s /Library/Audio/Plug-Ins/Components /Volumes/VLC\ EQ\ macOS\ v1.0.0
+ln -s /Library/Audio/Plug-Ins/VST3 /Volumes/VLC\ EQ\ macOS\ v1.0.0
+ln -s /System/Applications/Utilities/Terminal.app /Volumes/VLC\ EQ\ macOS\ v1.0.0
