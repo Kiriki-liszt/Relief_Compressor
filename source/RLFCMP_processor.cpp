@@ -171,14 +171,23 @@ tresult PLUGIN_API RLFCMP_Processor::process (Vst::ProcessData& data)
 //------------------------------------------------------------------------
 tresult PLUGIN_API RLFCMP_Processor::setupProcessing (Vst::ProcessSetup& newSetup)
 {
-    transition = 2*10.0/newSetup.sampleRate;
-    FDebugPrint("newSetup.sampleRate = %f\n", newSetup.sampleRate);
+    // TDR Insane 3x2 coef, bw = 400, k = 950
+    // TDR Live 3x2 or 2x2 coef, bw = 100, k ~= 800
+    
+    // transition acts like crossover between plain RMS ans Hilbert
+    // so it's not a bad thing with high transition freq.
+    // It will take care of Square Wave issue.
+    // Although Higher freq means more aliasing - so we need more cleanup = oversampling
+    
+    transition = 2*400.0/newSetup.sampleRate;
+    
     hiir::PolyphaseIir2Designer::compute_coefs_spec_order_tbw (coefs, numCoefs, transition);
+    
     // Phase reference path c coefficients
     for (int i = 1, j = 0; i < numCoefs; i += 2) {
         c[1][j++] = coefs[i];
-        FDebugPrint("Ref | c[0][j++] = %f\n", coefs[i]);
     }
+    
     // +90 deg path c coefficients
     for (int i = 0, j = 0; i < numCoefs; i += 2) {
         c[0][j++] = coefs[i];
@@ -196,8 +205,8 @@ tresult PLUGIN_API RLFCMP_Processor::canProcessSampleSize (int32 symbolicSampleS
 		return kResultTrue;
 
 	// disable the following comment if your processing support kSample64
-	/* if (symbolicSampleSize == Vst::kSample64)
-		return kResultTrue; */
+	if (symbolicSampleSize == Vst::kSample64)
+		return kResultTrue;
 
 	return kResultFalse;
 }
@@ -239,63 +248,74 @@ void RLFCMP_Processor::processAudio(
         while (--samples >= 0)
         {
             Vst::Sample64 inputSample = *ptrIn;
-
-            /*
-            
-            double env;
-            if (channel == 0)
-            {
-                Steinberg::Vst::Sample64 tmp1 = abs(inputSample) * abs(inputSample);
-                peak[channel] = (peak[channel] * coeff) + (icoef * tmp1);
-                env = sqrt(peak[channel]) * M_SQRT2;
-            }
-            else
-            {
-                // two paths for 0 and +90
-                for (int path = 0; path < 2; path++)
-                {
-                    double nextInput = inputSample * inputSample;
-                    for (int stage = 0; stage < numCoefs / 2; stage++)
-                    {
-                        double ret = c[path][stage] * (nextInput + state[channel][path][1][1][stage]) - state[channel][path][0][1][stage];
-                        state[channel][path][0][1][stage] = state[channel][path][0][0][stage];
-                        state[channel][path][0][0][stage] = nextInput;
-                        state[channel][path][1][1][stage] = state[channel][path][1][0][stage];
-                        state[channel][path][1][0][stage] = ret;
-                        nextInput = ret;
-                    }
-                }
-                rms_sin[channel] = state[channel][1][1][1][numCoefs / 2 - 1];
-                rms_cos[channel] = state[channel][0][1][0][numCoefs / 2 - 1];
-                rms[channel] = (coeff * rms[channel]) + (icoef * sqrt(rms_sin[channel] * rms_sin[channel] + rms_cos[channel] * rms_cos[channel]));
-
-                env = sqrt(rms[channel]);
-            }
-            
-            */
                         
             double env;
+            /*
+             BS1770 filter
+             
+             It simulates how human ear percives sound.
+             It helps compressor to behave more natual (to human ear).
+             */
             
+            /*
+             Allpass peak interpolator - Maybe good for simple Peak detector or RMS?
+             */
+            if (false) {
+                for (int path = 0; path < 4; path++)
+                {
+                    double nextInput = inputSample;
+                    double ret = ap_coef[path] * (nextInput - ap_state[channel][path][1]) + ap_state[channel][path][0];
+                    ap_state[channel][path][0] = nextInput;
+                    ap_state[channel][path][1] = ret;
+                }
+                for (int path = 1; path < 4; path++)
+                {
+                    if (inputSample < ap_state[channel][path][1]) inputSample = ap_state[channel][path][1];
+                }
+            }
+            /*
+             Hilbert Detector
+             
+             It consists of two paths with 90 degree phase difference.
+             We can say these two paths now have a sin <-> cos relation in Real-Imaginary plane
+             So if both paths are squared and added, it becomes a perfect envelope of original signal.
+             
+             However, digital method of generating two path with 90 degree phase difference is not ideal.
+             Also 90 degree phase shift of Square wave is out of control.
+             We have to be aware of this...
+             */
             // two paths for 0 and +90
-            for (int path = 0; path < 2; path++)
+            for (int path = 0; path < path_num; path++)
             {
-                double nextInput = inputSample;
+                double nextInput = inputSample; // spits weird values if abs or squaring input
                 for (int stage = 0; stage < numCoefsHalf; stage++)
                 {
-                    double ret = c[path][stage] * (nextInput + state[channel][path][1][1][stage]) - state[channel][path][0][1][stage];
-                    state[channel][path][0][1][stage] = state[channel][path][0][0][stage];
-                    state[channel][path][0][0][stage] = nextInput;
-                    state[channel][path][1][1][stage] = state[channel][path][1][0][stage];
-                    state[channel][path][1][0][stage] = ret;
+                    double ret = c[path][stage] * (nextInput + state[channel][path][io_y][1][stage]) - state[channel][path][io_x][1][stage];
+                    state[channel][path][io_x][1][stage] = state[channel][path][io_x][0][stage];
+                    state[channel][path][io_x][0][stage] = nextInput;
+                    state[channel][path][io_y][1][stage] = state[channel][path][io_y][0][stage];
+                    state[channel][path][io_y][0][stage] = ret;
                     nextInput = ret;
                 }
             }
-            double rms_s = state[channel][1][1][1][numCoefsHalf - 1];
-            double rms_c = state[channel][0][1][0][numCoefsHalf - 1];
-            // rms_sin[channel] = (coeff * rms_sin[channel]) + (icoef * rms_s);
-            // rms_cos[channel] = (coeff * rms_cos[channel]) + (icoef * rms_c);
-            rms[channel] = (coeff * rms[channel]) + (icoef * inputSample * inputSample);
-            // rms[channel] = (coeff * rms[channel]) + (icoef * sqrt(rms_s * rms_s + rms_c * rms_c));
+            double rms_s = state[channel][path_sft][io_y][1][numCoefsHalf - 1];
+            double rms_c = state[channel][path_ref][io_y][0][numCoefsHalf - 1];
+
+            /*
+             Envelope Detector
+             
+             Envelop(Level) Detector consists of Rectifier + Capacitor.
+             Capacitor is the Leaky integrator, converting AC to DC by reducing the ripple.
+             Attack and Release are then applied with RC circuit after this Detector.
+             
+             Capacitances for each detector algos should be calibrated indivisually.
+             */
+            double HT_dtct = rms_s * rms_s + rms_c * rms_c;
+            HT_envl[channel] = HT_coef * HT_envl[channel] + HT_icof * HT_dtct;
+            double delta = rms[channel] - HT_envl[channel];
+            double pp = smooth::Logistics(delta, logistics_k, 0.0); // (delta > 0) ? 1.0 : 0.0;
+            double nn = 1.0 - pp;
+            rms[channel] = (pp * _coeff + nn * coeff) * rms[channel] + (1 - (pp * _coeff + nn * coeff)) * HT_envl[channel];
             env = sqrt(rms[channel]);
             
             if (true)
@@ -309,6 +329,9 @@ void RLFCMP_Processor::processAudio(
                     gain = pow(10, gain * 0.05);
                     inputSample *= gain;
                 }
+            }
+            else{
+                inputSample = env;
             }
 
             *ptrOut = (SampleType)(inputSample);

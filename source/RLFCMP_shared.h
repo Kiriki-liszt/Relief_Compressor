@@ -416,9 +416,9 @@ public:
         return (a + b + ABS(a - b, smoothness)) * 0.5;
     };
 
-    static double Step(double in, double smoothness, double epsilon = 0.0)
+    static double Logistics(double delta, double k, double epsilon = 0.0)
     {
-        double init = 1.0 / (1.0 + exp(-1.0 * smoothness * in));
+        double init = 1.0 / (1.0 + exp(-k * delta));
         if (1.0 - init < epsilon) init = 1.0;
         else if (init < epsilon) init = 0.0;
         return init;
@@ -641,7 +641,7 @@ public:
     double processPeakBranched(const double& in) {
         
         double d = state01 - in;
-        double pp = smooth::Step(d, 100.0, 0.0); // (delta > 0) ? 1.0 : 0.0;
+        double pp = smooth::Logistics(d, 100.0, 0.0); // (delta > 0) ? 1.0 : 0.0;
         pp *= pp;
         double nn = 1.0 - pp;
         state01 = (pp * alphaAttack + nn * alphaRelease) * state01

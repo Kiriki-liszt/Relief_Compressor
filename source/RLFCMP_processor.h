@@ -77,46 +77,55 @@ protected:
     ParamValue pMix       = paramMix.ToNormalized(dftMix);
     ParamValue pOutput    = paramOutput.ToNormalized(dftOutput);
     
+    // fast RMS min attack 0.5ms
+    // slow RMS min attack 5.0ms
     
-    double coeff = exp(-1.0 / (2.0 * 0.001 * 48000.0));
+    double _coeff = exp(-1.0 / (20.0 * 0.001 * 48000.0));
+    double _icoef = 1.0 - _coeff;
+    
+    double coeff = exp(-1.0 / (0.2 * 0.001 * 48000.0));
     double icoef = 1.0 - coeff;
+    
+    double HT_coef = exp(-1.0 / (10.0 * 0.001 * 48000.0));
+    double HT_icof = 1.0 - HT_coef;
+    double HT_envl[2];
+    
     double rms_sin[2] = { 0.0, }, rms_cos[2] = { 0.0, }, rms[2] = { 0.0, };
     double peak[2] = {0.0, }, pp = 0.0;
     
-    static constexpr int numCoefs = 16; // Number of coefficients, must be even
-    static constexpr int numCoefsHalf = 8; // Number of coefficients, must be even
+    static constexpr double logistics_k = 950.0;
+    
+    // it relates to how Hilbert transforms into RMS in low frequencies.
+    // High number will change Hilbert to RMS quickly, low number will change gradually.
+    // Also high number will mangle transients more likely
+    // it does take effect in highend, but well beyond 20kHz.
+    
+    // Live and Eco looks like 4
+    // Presice looks 4~6
+    // Insane looks like 6~8
+    static constexpr int numCoefs = 6; // Number of coefficients, must be even
+    static constexpr int numCoefsHalf = numCoefs / 2;
     double transition = 2*20.0/48000; // Sampling frequency is 44.1 kHz. Approx. 90 deg phase difference band is from 20 Hz to 22050 Hz - 20 Hz. The transition bandwidth is twice 20 Hz.
 
     double coefs[numCoefs];
     
-    double c[2][numCoefsHalf] = {
-        {0.16514909355907719801,0.73982901254452670958,0.94794090632917971107,0.99120971270525837227},
-        {0.48660436861367767358,0.88077943527246449484,0.97793125561632343601,0.99767386185073303473}
-    };
-    double p1_sx_1[2] = { 0.0, };
-    double p1_sx_2[2] = { 0.0, };
-    double p1_sy_1[2] = { 0.0, };
-    double p1_sy_2[2] = { 0.0, };
-    double p2_sx_1[2] = { 0.0, };
-    double p2_sx_2[2] = { 0.0, };
-    double p2_sy_1[2] = { 0.0, };
-    double p2_sy_2[2] = { 0.0, };
-    double p3_sx_1[2] = { 0.0, };
-    double p3_sx_2[2] = { 0.0, };
-    double p3_sy_1[2] = { 0.0, };
-    double p3_sy_2[2] = { 0.0, };
-    double p4_sx_1[2] = { 0.0, };
-    double p4_sx_2[2] = { 0.0, };
-    double p4_sy_1[2] = { 0.0, };
-    double p4_sy_2[2] = { 0.0, };
-    
-    // 2-channel, 2-path, 2-state(x, y), 2-memory(x1, x2), numCoefs-stages,
-    double state[2][2][2][2][numCoefs] = {0, };
+    double c[2][numCoefsHalf];
 
-    double sx_1[2] = { 0.0, };
-    double sx_2[2] = { 0.0, };
-    double sy_1[2] = { 0.0, };
-    double sy_2[2] = { 0.0, };
+    enum {
+        io_x = 0,
+        io_y = 1,
+        io_num = 2
+    };
+    enum {
+        path_ref = 0,
+        path_sft = 1,
+        path_num = 2
+    };
+    // 2-channel, 2-path, 2-state(x, y), 2-memory(x1, x2), numCoefs-stages,
+    double state[2][path_num][io_num][2][numCoefs] = {0, };
+
+    double ap_state[2][4][2] = {0, };
+    double ap_coef[4] = {1.0, 0.6681786379192988, 0.41421356237309503, 0.198912367379658};
 };
 
 //------------------------------------------------------------------------
