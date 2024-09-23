@@ -11,6 +11,10 @@ if(GITHUB_ACTIONS)
     set(vst3sdk_SOURCE_DIR ${CMAKE_SOURCE_DIR}/vst3sdk)
 endif()
 
+if(NOT vst3sdk_SOURCE_DIR)
+    message(FATAL_ERROR "Path to VST3 SDK is empty!")
+endif()
+
 project(Relief_Compressor
     # This is your plug-in version number. Change it here only.
     # Version number symbols usable in C++ can be found in

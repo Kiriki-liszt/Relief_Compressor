@@ -7,6 +7,7 @@
 #include "pluginterfaces/vst/vsttypes.h"
 // #include "pluginterfaces/base/futils.h"
 
+#define _USE_MATH_DEFINES
 #include <cmath>
 #include <algorithm>
 #include <vector>

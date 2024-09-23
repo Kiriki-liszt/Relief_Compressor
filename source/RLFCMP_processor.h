@@ -78,17 +78,18 @@ protected:
     ParamValue pOutput    = paramOutput.ToNormalized(dftOutput);
     
     
-    double coeff = exp(-1.0 / (12.0 * 0.001 * 48000.0));
+    double coeff = exp(-1.0 / (2.0 * 0.001 * 48000.0));
     double icoef = 1.0 - coeff;
-    double rms_sin[2] = {0.0, }, rms_cos[2] = {0.0, }, rms = 0.0;
+    double rms_sin[2] = { 0.0, }, rms_cos[2] = { 0.0, }, rms[2] = { 0.0, };
     double peak[2] = {0.0, }, pp = 0.0;
     
     static constexpr int numCoefs = 16; // Number of coefficients, must be even
+    static constexpr int numCoefsHalf = 8; // Number of coefficients, must be even
     double transition = 2*20.0/48000; // Sampling frequency is 44.1 kHz. Approx. 90 deg phase difference band is from 20 Hz to 22050 Hz - 20 Hz. The transition bandwidth is twice 20 Hz.
 
     double coefs[numCoefs];
     
-    double c[2][numCoefs/2] = {
+    double c[2][numCoefsHalf] = {
         {0.16514909355907719801,0.73982901254452670958,0.94794090632917971107,0.99120971270525837227},
         {0.48660436861367767358,0.88077943527246449484,0.97793125561632343601,0.99767386185073303473}
     };

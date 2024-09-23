@@ -240,11 +240,47 @@ void RLFCMP_Processor::processAudio(
         {
             Vst::Sample64 inputSample = *ptrIn;
 
+            /*
+            
+            double env;
+            if (channel == 0)
+            {
+                Steinberg::Vst::Sample64 tmp1 = abs(inputSample) * abs(inputSample);
+                peak[channel] = (peak[channel] * coeff) + (icoef * tmp1);
+                env = sqrt(peak[channel]) * M_SQRT2;
+            }
+            else
+            {
+                // two paths for 0 and +90
+                for (int path = 0; path < 2; path++)
+                {
+                    double nextInput = inputSample * inputSample;
+                    for (int stage = 0; stage < numCoefs / 2; stage++)
+                    {
+                        double ret = c[path][stage] * (nextInput + state[channel][path][1][1][stage]) - state[channel][path][0][1][stage];
+                        state[channel][path][0][1][stage] = state[channel][path][0][0][stage];
+                        state[channel][path][0][0][stage] = nextInput;
+                        state[channel][path][1][1][stage] = state[channel][path][1][0][stage];
+                        state[channel][path][1][0][stage] = ret;
+                        nextInput = ret;
+                    }
+                }
+                rms_sin[channel] = state[channel][1][1][1][numCoefs / 2 - 1];
+                rms_cos[channel] = state[channel][0][1][0][numCoefs / 2 - 1];
+                rms[channel] = (coeff * rms[channel]) + (icoef * sqrt(rms_sin[channel] * rms_sin[channel] + rms_cos[channel] * rms_cos[channel]));
+
+                env = sqrt(rms[channel]);
+            }
+            
+            */
+                        
+            double env;
+            
             // two paths for 0 and +90
             for (int path = 0; path < 2; path++)
             {
                 double nextInput = inputSample;
-                for (int stage = 0; stage < numCoefs/2; stage++)
+                for (int stage = 0; stage < numCoefsHalf; stage++)
                 {
                     double ret = c[path][stage] * (nextInput + state[channel][path][1][1][stage]) - state[channel][path][0][1][stage];
                     state[channel][path][0][1][stage] = state[channel][path][0][0][stage];
@@ -254,36 +290,28 @@ void RLFCMP_Processor::processAudio(
                     nextInput = ret;
                 }
             }
+            double rms_s = state[channel][1][1][1][numCoefsHalf - 1];
+            double rms_c = state[channel][0][1][0][numCoefsHalf - 1];
+            // rms_sin[channel] = (coeff * rms_sin[channel]) + (icoef * rms_s);
+            // rms_cos[channel] = (coeff * rms_cos[channel]) + (icoef * rms_c);
+            rms[channel] = (coeff * rms[channel]) + (icoef * inputSample * inputSample);
+            // rms[channel] = (coeff * rms[channel]) + (icoef * sqrt(rms_s * rms_s + rms_c * rms_c));
+            env = sqrt(rms[channel]);
             
-            Steinberg::Vst::Sample64 tmp1 = abs(inputSample) * abs(inputSample);
-            
-            double env;
-            if (channel == 0)
+            if (true)
             {
-                peak[channel] = (peak[channel] * coeff) + (icoef * tmp1);
-                env = sqrt(peak[channel]) * M_SQRT2;
-                rms_sin[channel] = (rms_sin[channel] * coeff) + (icoef * state[channel][1][1][1][numCoefs/2 - 1] * state[channel][1][1][1][numCoefs/2 - 1]);
-                rms_cos[channel] = (rms_cos[channel] * coeff) + (icoef * state[channel][0][1][0][numCoefs/2 - 1] * state[channel][0][1][0][numCoefs/2 - 1]);
-                env = sqrt(rms_sin[channel] + rms_cos[channel]);
-            }
-            else
-            {
-                rms_sin[channel] = (rms_sin[channel] * coeff) + (icoef * state[channel][1][1][1][numCoefs/2 - 1] * state[channel][1][1][1][numCoefs/2 - 1]);
-                rms_cos[channel] = (rms_cos[channel] * coeff) + (icoef * state[channel][0][1][0][numCoefs/2 - 1] * state[channel][0][1][0][numCoefs/2 - 1]);
-                env = sqrt(rms_sin[channel] + rms_cos[channel]);
-            }
-            
-            env = 20 * log10(env);
-            double gain = 1.0;
-            if (env > -15.0) // env == -9
-            {
-                gain = env - (-15.0);
-                double slope = 1.0 / 4.0 - 1.0;
-                gain *= slope;
-                gain = pow(10, gain * 0.05);
+                env = 20 * log10(env);
+                if (env > -15.0) // env == -9
+                {
+                    double gain = env - (-15.0);
+                    double slope = 1.0 / 4.0 - 1.0;
+                    gain *= slope;
+                    gain = pow(10, gain * 0.05);
+                    inputSample *= gain;
+                }
             }
 
-            *ptrOut = (SampleType)(inputSample * gain);
+            *ptrOut = (SampleType)(inputSample);
             
             ptrIn++;
             ptrOut++;
