@@ -18,8 +18,8 @@ namespace yg331 {
 //------------------------------------------------------------------------
 RLFCMP_Processor::RLFCMP_Processor ()
 {
-	//--- set the wanted controller for our processor
-	setControllerClass (kRLFCMP_ControllerUID);
+    //--- set the wanted controller for our processor
+    setControllerClass (kRLFCMP_ControllerUID);
 }
 
 //------------------------------------------------------------------------
@@ -29,40 +29,43 @@ RLFCMP_Processor::~RLFCMP_Processor ()
 //------------------------------------------------------------------------
 tresult PLUGIN_API RLFCMP_Processor::initialize (FUnknown* context)
 {
-	// Here the Plug-in will be instantiated
-	
-	//---always initialize the parent-------
-	tresult result = AudioEffect::initialize (context);
-	// if everything Ok, continue
-	if (result != kResultOk)
-	{
-		return result;
-	}
+    // Here the Plug-in will be instantiated
+    
+    //---always initialize the parent-------
+    tresult result = AudioEffect::initialize (context);
+    // if everything Ok, continue
+    if (result != kResultOk)
+    {
+        return result;
+    }
 
-	//--- create Audio IO ------
-	addAudioInput  (STR16 ("Stereo In"), Steinberg::Vst::SpeakerArr::kStereo);
-	addAudioOutput (STR16 ("Stereo Out"), Steinberg::Vst::SpeakerArr::kStereo);
+    //--- create Audio IO ------
+    addAudioInput  (STR16 ("Stereo In"), Steinberg::Vst::SpeakerArr::kStereo);
+    addAudioOutput (STR16 ("Stereo Out"), Steinberg::Vst::SpeakerArr::kStereo);
 
-	/* If you don't need an event bus, you can remove the next line */
-	// addEventInput (STR16 ("Event In"), 1);
+    /* If you don't need an event bus, you can remove the next line */
+    // addEventInput (STR16 ("Event In"), 1);
+    
+    // JUST for my sanity
+    call_after_parameter_changed ();
 
-	return kResultOk;
+    return kResultOk;
 }
 
 //------------------------------------------------------------------------
 tresult PLUGIN_API RLFCMP_Processor::terminate ()
 {
-	// Here the Plug-in will be de-instantiated, last possibility to remove some memory!
-	
-	//---do not forget to call parent ------
-	return AudioEffect::terminate ();
+    // Here the Plug-in will be de-instantiated, last possibility to remove some memory!
+    
+    //---do not forget to call parent ------
+    return AudioEffect::terminate ();
 }
 
 //------------------------------------------------------------------------
 tresult PLUGIN_API RLFCMP_Processor::setActive (TBool state)
 {
-	//--- called when the Plug-in is enable/disable (On/Off) -----
-	return AudioEffect::setActive (state);
+    //--- called when the Plug-in is enable/disable (On/Off) -----
+    return AudioEffect::setActive (state);
 }
 
 //------------------------------------------------------------------------
@@ -86,23 +89,23 @@ tresult PLUGIN_API RLFCMP_Processor::process (Vst::ProcessData& data)
 
                 if (paramQueue->getPoint(numPoints - 1, sampleOffset, value) == kResultTrue) {
                     switch (paramQueue->getParameterId()) {
-                        case kParamBypass:     pBypass     = (value > 0.5); break;
-                        case kParamSoftBypass: pSoftBypass = (value > 0.5); break;
+                        case kParamBypass:          pBypass     = (value > 0.5); break;
                         // case kParamZoom:       pZoom       = value; break;
-                        case kParamOS:         pOS         = value; break;
-                        case kParamSidechainFilter: pSidechainFilter = value; break;
-                        case kParamAttack:     pAttack     = value; break;
-                        case kParamRelease:    pRelease    = value; break;
-                        case kParamBias:       pBias       = value; break;
-                        case kParamThreshold:  pThreshold  = value; break;
-                        case kParamRatio:      pRatio      = value; break;
-                        case kParamKnee:       pKnee       = value; break;
-                        case kParamMakeup:     pMakeup     = value; break;
-                        case kParamMix:        pMix        = value; break;
-                        case kParamOutput:     pOutput     = value; break;
-                        
+                        // case kParamOS:         pOS         = value; break;
+                        case kParamSidechainFilter: pSidechainFilter = (value > 0.5); break;
+                        case kParamAttack:          pAttack     = value; break;
+                        case kParamRelease:         pRelease    = value; break;
+                        case kParamBias:            pBias       = value; break;
+                        case kParamThreshold:       pThreshold  = value; break;
+                        case kParamRatio:           pRatio      = value; break;
+                        case kParamKnee:            pKnee       = value; break;
+                        case kParamMakeup:          pMakeup     = value; break;
+                        case kParamMix:             pMix        = value; break;
+                        case kParamOutput:          pOutput     = value; break;
+                        case kParamSoftBypass:      pSoftBypass = (value > 0.5); break;
                         default: break;
                     }
+                    call_after_parameter_changed ();
                 }
             }
         }
@@ -164,69 +167,137 @@ tresult PLUGIN_API RLFCMP_Processor::process (Vst::ProcessData& data)
             }
         }
     }
+    
+    //---send a message
+    if (IPtr<Vst::IMessage> message = owned (allocateMessage ()))
+    {
+       message->setMessageID ("GUI");
+       message->getAttributes()->setInt ("detectorIndicator", detectorIndicator);
+       sendMessage (message);
+    }
 
-	return kResultOk;
+    return kResultOk;
 }
 
 //------------------------------------------------------------------------
 tresult PLUGIN_API RLFCMP_Processor::setupProcessing (Vst::ProcessSetup& newSetup)
 {
-    // TDR Insane 3x2 coef, bw = 400, k = 950
-    // TDR Live 3x2 or 2x2 coef, bw = 100, k ~= 800
-    
-    // transition acts like crossover between plain RMS ans Hilbert
-    // so it's not a bad thing with high transition freq.
-    // It will take care of Square Wave issue.
-    // Although Higher freq means more aliasing - so we need more cleanup = oversampling
-    
-    transition = 2*400.0/newSetup.sampleRate;
-    
-    hiir::PolyphaseIir2Designer::compute_coefs_spec_order_tbw (coefs, numCoefs, transition);
-    
-    // Phase reference path c coefficients
-    for (int i = 1, j = 0; i < numCoefs; i += 2) {
-        c[1][j++] = coefs[i];
+    // This happens BEFORE setState
+    fprintf (stdout, "setupProcessing\n");
+    if (projectSR != newSetup.sampleRate)
+    {
+        fprintf (stdout, "projectSR = %f\n", projectSR);
+        fprintf (stdout, "newSetup.sampleRate = %f\n", newSetup.sampleRate);
+        projectSR = newSetup.sampleRate;
+        
+        if      (projectSR > 96000.0) internalSR = projectSR;
+        else if (projectSR > 48000.0) internalSR = projectSR * 2.0;
+        else                          internalSR = projectSR * 4.0;
+        
+        call_after_SR_changed ();
     }
     
-    // +90 deg path c coefficients
-    for (int i = 0, j = 0; i < numCoefs; i += 2) {
-        c[0][j++] = coefs[i];
-    }
-    
-	//--- called before any processing ----
-	return AudioEffect::setupProcessing (newSetup);
+    //--- called before any processing ----
+    return AudioEffect::setupProcessing (newSetup);
 }
 
 //------------------------------------------------------------------------
 tresult PLUGIN_API RLFCMP_Processor::canProcessSampleSize (int32 symbolicSampleSize)
 {
-	// by default kSample32 is supported
-	if (symbolicSampleSize == Vst::kSample32)
-		return kResultTrue;
+    // by default kSample32 is supported
+    if (symbolicSampleSize == Vst::kSample32)
+        return kResultTrue;
 
-	// disable the following comment if your processing support kSample64
-	if (symbolicSampleSize == Vst::kSample64)
-		return kResultTrue;
+    // disable the following comment if your processing support kSample64
+    if (symbolicSampleSize == Vst::kSample64)
+        return kResultTrue;
 
-	return kResultFalse;
+    return kResultFalse;
 }
 
 //------------------------------------------------------------------------
 tresult PLUGIN_API RLFCMP_Processor::setState (IBStream* state)
 {
-	// called when we load a preset, the model has to be reloaded
-	IBStreamer streamer (state, kLittleEndian);
-	
-	return kResultOk;
+    // called when we load a preset, the model has to be reloaded
+    if (!state)
+        return kResultFalse;
+    fprintf (stdout, "setState\n");
+    IBStreamer streamer (state, kLittleEndian);
+
+    int32           savedBypass     = 0;
+    // Vst::ParamValue savedZoom       = 0.0;
+    // Vst::ParamValue savedOS         = 0.0;
+    int32           savedSidechainFilter = 0.0;
+    Vst::ParamValue savedAttack     = 0.0;
+    Vst::ParamValue savedRelease    = 0.0;
+    Vst::ParamValue savedBias       = 0.0;
+    Vst::ParamValue savedThreshold  = 0.0;
+    Vst::ParamValue savedRatio      = 0.0;
+    Vst::ParamValue savedKnee       = 0.0;
+    Vst::ParamValue savedMakeup     = 0.0;
+    Vst::ParamValue savedMix        = 0.0;
+    Vst::ParamValue savedOutput     = 0.0;
+    int32           savedSoftBypass = 0.0;
+    
+    if (streamer.readInt32 (savedBypass)     == false) savedBypass     = 0;
+    // if (streamer.readDouble(savedZoom)       == false) savedZoom       = 2.0 / 6.0;
+    // if (streamer.readDouble(savedOS)         == false) savedOS         = 0.0;
+    if (streamer.readInt32 (savedSidechainFilter) == false) savedSidechainFilter = 0;
+    if (streamer.readDouble(savedAttack)     == false) savedAttack     = paramAttack.ToNormalized(dftAttack);
+    if (streamer.readDouble(savedRelease)    == false) savedRelease    = paramRelease.ToNormalized(dftRelease);
+    if (streamer.readDouble(savedBias)       == false) savedBias       = paramBias.ToNormalized(dftBias);
+    if (streamer.readDouble(savedThreshold)  == false) savedThreshold  = paramThreshold.ToNormalized(dftThreshold);
+    if (streamer.readDouble(savedRatio)      == false) savedRatio      = paramRatio.ToNormalized(dftRatio);
+    if (streamer.readDouble(savedKnee)       == false) savedKnee       = paramKnee.ToNormalized(dftKnee);
+    if (streamer.readDouble(savedMakeup)     == false) savedMakeup     = paramMakeup.ToNormalized(dftMakeup);
+    if (streamer.readDouble(savedMix)        == false) savedMix        = paramMix.ToNormalized(dftMix);
+    if (streamer.readDouble(savedOutput)     == false) savedOutput     = paramOutput.ToNormalized(dftOutput);
+    if (streamer.readInt32 (savedSoftBypass) == false) savedSoftBypass = 0;
+    
+    pBypass = savedBypass > 0;
+    // pOS = savedOS;
+    pSidechainFilter = savedSidechainFilter > 0;
+    pAttack     = savedAttack;
+    pRelease    = savedRelease;
+    pBias       = savedBias;
+    pThreshold  = savedThreshold;
+    pRatio      = savedRatio;
+    pKnee       = savedKnee;
+    pMakeup     = savedMakeup;
+    pMix        = savedMix;
+    pOutput     = savedOutput;
+    pSoftBypass = savedSoftBypass > 0;
+    
+    call_after_parameter_changed ();
+    
+    return kResultOk;
 }
 
 //------------------------------------------------------------------------
 tresult PLUGIN_API RLFCMP_Processor::getState (IBStream* state)
 {
-	// here we need to save the model
-	IBStreamer streamer (state, kLittleEndian);
-
-	return kResultOk;
+    // here we need to save the model
+    if (!state)
+        return kResultFalse;
+    fprintf (stdout, "getState\n");
+    IBStreamer streamer (state, kLittleEndian);
+    
+    streamer.writeInt32(pBypass ? 1 : 0);
+    // streamer.writeDouble(pZoom);
+    // streamer.writeDouble(Steinberg::ToNormalized<ParamValue> (static_cast<ParamValue>(pOS), overSample_num));
+    streamer.writeInt32(pSidechainFilter ? 1 : 0);
+    streamer.writeDouble(pAttack);
+    streamer.writeDouble(pRelease);
+    streamer.writeDouble(pBias);
+    streamer.writeDouble(pThreshold);
+    streamer.writeDouble(pRatio);
+    streamer.writeDouble(pKnee);
+    streamer.writeDouble(pMakeup);
+    streamer.writeDouble(pMix);
+    streamer.writeDouble(pOutput);
+    streamer.writeInt32(pSoftBypass ? 1 : 0);
+    
+    return kResultOk;
 }
 
 template <typename SampleType>
@@ -248,31 +319,19 @@ void RLFCMP_Processor::processAudio(
         while (--samples >= 0)
         {
             Vst::Sample64 inputSample = *ptrIn;
-                        
-            double env;
+
+            double sideChain = inputSample;
+            
             /*
              BS1770 filter
              
              It simulates how human ear percives sound.
              It helps compressor to behave more natual (to human ear).
              */
-            
-            /*
-             Allpass peak interpolator - Maybe good for simple Peak detector or RMS?
-             */
-            if (false) {
-                for (int path = 0; path < 4; path++)
-                {
-                    double nextInput = inputSample;
-                    double ret = ap_coef[path] * (nextInput - ap_state[channel][path][1]) + ap_state[channel][path][0];
-                    ap_state[channel][path][0] = nextInput;
-                    ap_state[channel][path][1] = ret;
-                }
-                for (int path = 1; path < 4; path++)
-                {
-                    if (inputSample < ap_state[channel][path][1]) inputSample = ap_state[channel][path][1];
-                }
-            }
+            // sidechainFilter In/Out is controlled inside of SVF
+            sideChain = BS1770_PF [channel].computeSVF(inputSample);
+            sideChain = BS1770_RLB[channel].computeSVF(sideChain);
+
             /*
              Hilbert Detector
              
@@ -284,23 +343,24 @@ void RLFCMP_Processor::processAudio(
              Also 90 degree phase shift of Square wave is out of control.
              We have to be aware of this...
              */
-            // two paths for 0 and +90
-            for (int path = 0; path < path_num; path++)
+            
+            for (int path = 0; path < path_num; path++) // two paths for 0 and +90
             {
-                double nextInput = inputSample; // spits weird values if abs or squaring input
-                for (int stage = 0; stage < numCoefsHalf; stage++)
+                double nextInput = sideChain; // spits weird values if abs or squaring input
+                for (int stage = 0; stage < HT_stage; stage++)
                 {
-                    double ret = c[path][stage] * (nextInput + state[channel][path][io_y][1][stage]) - state[channel][path][io_x][1][stage];
-                    state[channel][path][io_x][1][stage] = state[channel][path][io_x][0][stage];
-                    state[channel][path][io_x][0][stage] = nextInput;
-                    state[channel][path][io_y][1][stage] = state[channel][path][io_y][0][stage];
-                    state[channel][path][io_y][0][stage] = ret;
+                    double ret = HT_coefs[path][stage] * (nextInput + state[channel][path][io_y][y2][stage]) - state[channel][path][io_x][x2][stage];
+                    state[channel][path][io_x][x2][stage] = state[channel][path][io_x][x1][stage];
+                    state[channel][path][io_x][x1][stage] = nextInput;
+                    state[channel][path][io_y][y2][stage] = state[channel][path][io_y][y1][stage];
+                    state[channel][path][io_y][y1][stage] = ret;
                     nextInput = ret;
                 }
             }
-            double rms_s = state[channel][path_sft][io_y][1][numCoefsHalf - 1];
-            double rms_c = state[channel][path_ref][io_y][0][numCoefsHalf - 1];
-
+            double rms_s   = state[channel][path_ref][io_y][y2][HT_stage - 1];
+            double rms_c   = state[channel][path_sft][io_y][y1][HT_stage - 1];
+            double HT_dtct = rms_s * rms_s + rms_c * rms_c; // == Ideal squared input
+            
             /*
              Envelope Detector
              
@@ -310,29 +370,53 @@ void RLFCMP_Processor::processAudio(
              
              Capacitances for each detector algos should be calibrated indivisually.
              */
-            double HT_dtct = rms_s * rms_s + rms_c * rms_c;
-            HT_envl[channel] = HT_coef * HT_envl[channel] + HT_icof * HT_dtct;
-            double delta = rms[channel] - HT_envl[channel];
-            double pp = smooth::Logistics(delta, logistics_k, 0.0); // (delta > 0) ? 1.0 : 0.0;
-            double nn = 1.0 - pp;
-            rms[channel] = (pp * _coeff + nn * coeff) * rms[channel] + (1 - (pp * _coeff + nn * coeff)) * HT_envl[channel];
-            env = sqrt(rms[channel]);
             
-            if (true)
-            {
-                env = 20 * log10(env);
-                if (env > -15.0) // env == -9
-                {
-                    double gain = env - (-15.0);
-                    double slope = 1.0 / 4.0 - 1.0;
-                    gain *= slope;
-                    gain = pow(10, gain * 0.05);
-                    inputSample *= gain;
-                }
-            }
-            else{
-                inputSample = env;
-            }
+            // 'Level Detector' output
+            // HT_envl[channel] = HT_coef * HT_envl[channel] + (1.0 - HT_coef) * HT_dtct;
+            
+            // Appling Attack-Release
+            double delta = HT_dtct - slow_rms[channel];
+            double pp = smooth::Logistics(delta, k_lin); // (delta > 0) ? 1.0 : 0.0;
+            double nn = 1.0 - pp;
+            slow_rms[channel] = (pp * slow_atk + nn * slow_rls) * slow_rms[channel] + (1.0 - (pp * slow_atk + nn * slow_rls)) * HT_dtct;
+            double slow_env = sqrt(slow_rms[channel]);
+            
+            double sqared = sideChain * sideChain;
+            delta = sqared - fast_rms[channel];
+            pp = smooth::Logistics(delta, k_lin);
+            nn = 1.0 - pp;
+            fast_rms[channel] = (pp * fast_atk + nn * fast_rls) * fast_rms[channel] + (1.0 - (pp * fast_atk + nn * fast_rls)) * sqared;
+            double fast_env = sqrt(fast_rms[channel]);
+            
+            if (bias > 0) fast_env *= DecibelConverter::ToGain(-bias); // if +6dB, fast - 6dB
+            else          slow_env *= DecibelConverter::ToGain(bias);  // if -6dB, slow - 6dB
+            
+            delta = fast_env - slow_env;
+            pp = smooth::Logistics(delta, k_log);
+            nn = 1.0 - pp;
+            double env = pp * fast_env + nn * slow_env;
+            // double env = smooth::Max(fast_env, slow_env, 0.001);
+            
+            env = DecibelConverter::ToDecibel(env);
+            
+            double overshoot = env - (paramThreshold.ToPlain(pThreshold));
+            
+            double gain = 1.0;
+
+            if (overshoot <= -kneeHalf)
+                gain = 0.0;
+            else if (overshoot > -kneeHalf && overshoot <= kneeHalf)
+                gain = 0.5 * slope * ((overshoot + kneeHalf) * (overshoot + kneeHalf)) / knee;
+            else
+                gain = slope * overshoot;
+            
+            gain = DecibelConverter::ToGain(gain);
+            
+            detectorIndicator = (gain < 0.9) ? ((fast_env > slow_env) ? 2 : 1) : 0;
+            // detectorIndicator = (fast_env > slow_env) ? 2 : 1;
+            
+            inputSample *= gain;
+
 
             *ptrOut = (SampleType)(inputSample);
             
@@ -344,3 +428,24 @@ void RLFCMP_Processor::processAudio(
 }
 //------------------------------------------------------------------------
 } // namespace yg331
+
+/*
+ 
+// Allpass peak interpolator - Maybe good for simple Peak detector or RMS?
+if (false)
+{
+    double ap_state[2][4][2] = {0, };
+    double ap_coef[4] = {1.0, 0.6681786379192988, 0.41421356237309503, 0.198912367379658};
+    for (int path = 0; path < 4; path++)
+    {
+        double nextInput = inputSample;
+        double ret = ap_coef[path] * (nextInput - ap_state[channel][path][1]) + ap_state[channel][path][0];
+        ap_state[channel][path][0] = nextInput;
+        ap_state[channel][path][1] = ret;
+    }
+    for (int path = 1; path < 4; path++)
+    {
+        if (inputSample < ap_state[channel][path][1]) inputSample = ap_state[channel][path][1];
+    }
+}
+*/

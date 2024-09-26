@@ -17,13 +17,13 @@ class RLFCMP_Processor : public Steinberg::Vst::AudioEffect
 public:
     RLFCMP_Processor ();
     ~RLFCMP_Processor () SMTG_OVERRIDE;
-
+    
     // Create function
     static Steinberg::FUnknown* createInstance (void* /*context*/)
     {
         return (Steinberg::Vst::IAudioProcessor*)new RLFCMP_Processor;
     }
-
+    
     //--- ---------------------------------------------------------------------
     // AudioEffect overrides:
     //--- ---------------------------------------------------------------------
@@ -35,7 +35,7 @@ public:
     
     /** Switch the Plug-in on/off */
     Steinberg::tresult PLUGIN_API setActive (Steinberg::TBool state) SMTG_OVERRIDE;
-
+    
     /** Will be called before any process call */
     Steinberg::tresult PLUGIN_API setupProcessing (Steinberg::Vst::ProcessSetup& newSetup) SMTG_OVERRIDE;
     
@@ -44,88 +44,191 @@ public:
     
     /** Asks if a given sample size is supported see SymbolicSampleSizes. */
     Steinberg::tresult PLUGIN_API canProcessSampleSize (Steinberg::int32 symbolicSampleSize) SMTG_OVERRIDE;
-
+    
     /** Here we go...the process call */
     Steinberg::tresult PLUGIN_API process (Steinberg::Vst::ProcessData& data) SMTG_OVERRIDE;
-        
+    
     /** For persistence */
     Steinberg::tresult PLUGIN_API setState (Steinberg::IBStream* state) SMTG_OVERRIDE;
     Steinberg::tresult PLUGIN_API getState (Steinberg::IBStream* state) SMTG_OVERRIDE;
-
-//------------------------------------------------------------------------
+    
+    //------------------------------------------------------------------------
 protected:
     template <typename SampleType>
-    void processAudio(SampleType** inputs, SampleType** outputs, int32 numChannels, SampleRate getSampleRate, int32 sampleFrames);
+    void processAudio (SampleType** inputs, SampleType** outputs, int32 numChannels, SampleRate getSampleRate, int32 sampleFrames);
+    
+    inline double getFastAttack  (ParamValue sec, SampleRate SR) { return exp(-1.0 / (0.25 * sec * 0.001 * SR)); }
+    inline double getSlowAttack  (ParamValue sec, SampleRate SR) { return exp(-1.0 / (9.0 * sec * 0.001 * SR)); }
+    inline double getFastRelease (ParamValue sec, SampleRate SR) { return exp(-1.0 / (0.5 * sec * 0.001 * SR)); }
+    inline double getSlowRelease (ParamValue sec, SampleRate SR) { return exp(-1.0 / (1.0 * sec * 0.001 * SR)); }
+    
+    inline void call_after_SR_changed ()
+    {
+        ParamValue transition = 2.0 * bw / projectSR; // 90 deg phase difference band is from 20 Hz to Nyquist - 20 Hz. The transition bandwidth is twice 20 Hz.
+
+        ParamValue coefs[HT_order];
+        
+        hiir::PolyphaseIir2Designer::compute_coefs_spec_order_tbw (coefs, HT_order, transition);
+        
+        // Phase reference path c coefficients
+        for (int i = 1, j = 0; i < HT_order; i += 2)
+            HT_coefs[path_ref][j++] = coefs[i];
+
+        // +90 deg path c coefficients
+        for (int i = 0, j = 0; i < HT_order; i += 2)
+            HT_coefs[path_sft][j++] = coefs[i];
+        
+        fast_atk  = getFastAttack(paramAttack.ToPlain(pAttack), projectSR);
+        fast_rls  = getFastRelease(paramRelease.ToPlain(pRelease), projectSR);
+        slow_atk  = getSlowAttack(paramAttack.ToPlain(pAttack), projectSR);
+        slow_rls  = getSlowRelease(paramRelease.ToPlain(pRelease), projectSR);
+        HT_coef   = exp(-1.0 / (8.0 * 0.001 * projectSR));
+        
+        for (int32 channel = 0; channel < 2; channel++)
+        {
+            BS1770_PF[channel]. setSVF(pSidechainFilter, PF_FREQ, PF_Q, PF_dB, simpleSVF::HighShelf, projectSR);
+            BS1770_RLB[channel].setSVF(pSidechainFilter, RLB_FREQ, RLB_Q, 0.0, simpleSVF::HighPass,  projectSR);
+        }
+    }
+    inline void call_after_parameter_changed ()
+    {
+        fast_atk  = getFastAttack(paramAttack.ToPlain(pAttack), projectSR);
+        fast_rls  = getFastRelease(paramRelease.ToPlain(pRelease), projectSR);
+        slow_atk  = getSlowAttack(paramAttack.ToPlain(pAttack), projectSR);
+        slow_rls  = getSlowRelease(paramRelease.ToPlain(pRelease), projectSR);
+        
+        bias      = paramBias.ToPlain(pBias);
+        threshold = paramThreshold.ToPlain(pThreshold);
+        ratio     = paramRatio.ToPlain(pRatio);
+        slope     = 1.0 / ratio - 1.0;
+        knee      = paramKnee.ToPlain(pKnee);
+        kneeHalf  = knee / 2.0;
+        
+        for (int32 channel = 0; channel < 2; channel++)
+        {
+            BS1770_PF[channel]. setIn(pSidechainFilter);
+            BS1770_RLB[channel].setIn(pSidechainFilter);
+        }
+    }
     
     // Parameters
     bool       pBypass     = dftBypass > 0;
     bool       pSoftBypass = dftSoftBypass > 0;
     // pZoom,
-    ParamValue pOS = 2.0 / 6.0;
+    overSample pOS         = overSample_1x;
     
     bool       pSidechainFilter = dftSidechainFilter > 0;
+    
+    ParamValue pAttack     = paramAttack.   ToNormalized(dftAttack);
+    ParamValue pRelease    = paramRelease.  ToNormalized(dftRelease);
+    ParamValue pBias       = paramBias.     ToNormalized(dftBias);
+    
+    ParamValue pThreshold  = paramThreshold.ToNormalized(dftThreshold);
+    ParamValue pRatio      = paramRatio.    ToNormalized(dftRatio);
+    ParamValue pKnee       = paramKnee.     ToNormalized(dftKnee);
+    ParamValue pMakeup     = paramMakeup.   ToNormalized(dftMakeup);
+    
+    ParamValue pMix        = paramMix.      ToNormalized(dftMix);
+    ParamValue pOutput     = paramOutput.   ToNormalized(dftOutput);
+    
+    // Internal plain values
+    SampleRate projectSR  = 48000.0;
+    SampleRate internalSR = 192000.0;
+    int32      detectorIndicator = 0.0;
+    
+    ParamValue fast_atk = getFastAttack(dftAttack, projectSR);
+    ParamValue fast_rls = getFastRelease(dftRelease, projectSR);
+    ParamValue slow_atk = getSlowAttack(dftAttack, projectSR);
+    ParamValue slow_rls = getSlowRelease(dftAttack, projectSR);
+    
+    ParamValue HT_coef = exp(-1.0 / (8.0 * 0.001 * projectSR));
+    ParamValue HT_envl[2];
+    
+    ParamValue fast_rms[2], slow_rms[2];
+    
+    ParamValue bias      = paramBias.ToPlain(pBias);
+    ParamValue threshold = paramThreshold.ToPlain(pThreshold);
+    ParamValue ratio     = paramRatio.ToPlain(pRatio);
+    ParamValue slope     = 1.0 / ratio - 1.0;
+    ParamValue knee      = paramKnee.ToPlain(pKnee);
+    ParamValue kneeHalf  = knee / 2.0;
+    
+    /*
+     numCoefs
+     it relates to how Hilbert transforms into RMS in low frequencies.
+     High number will change Hilbert to RMS quickly, low number will change gradually.
+     Also high number will mangle transients more likely
+     it does take effect in highend, but well beyond 20kHz.
 
-    ParamValue pAttack    = paramAttack.ToNormalized(dftAttack);
-    ParamValue pRelease   = paramRelease.ToNormalized(dftRelease);
-    ParamValue pBias      = paramBias.ToNormalized(dftBias);
+     transition acts like crossover between plain RMS ans Hilbert
+     so it's not a bad thing with high transition freq.
+     It will take care of Square Wave issue.
+     Although Higher freq means more aliasing - so we need more cleanup = oversampling
+     
+     TDR Insane   3x2 coef, bw = 400, k = 950
+     TDR Presice  3x2 coef, bw = 300, k = 950
+     TDR Live/Eco 2x2 coef, bw = 100, k = 800
+     */
+    static constexpr ParamValue k_lin = 300.0;
+    static constexpr ParamValue k_log = 100.0;
+    static constexpr ParamValue bw = 300.0;
+    static constexpr int32 HT_stage = 3;
+    static constexpr int32 HT_order = HT_stage * 2; // Number of coefficients, must be even
 
-    ParamValue pThreshold = paramThreshold.ToNormalized(dftThreshold);
-    ParamValue pRatio     = paramRatio.ToNormalized(dftRatio);
-    ParamValue pKnee      = paramKnee.ToNormalized(dftKnee);
-    ParamValue pMakeup    = paramMakeup.ToNormalized(dftMakeup);
-    
-    ParamValue pMix       = paramMix.ToNormalized(dftMix);
-    ParamValue pOutput    = paramOutput.ToNormalized(dftOutput);
-    
-    // fast RMS min attack 0.5ms
-    // slow RMS min attack 5.0ms
-    
-    double _coeff = exp(-1.0 / (20.0 * 0.001 * 48000.0));
-    double _icoef = 1.0 - _coeff;
-    
-    double coeff = exp(-1.0 / (0.2 * 0.001 * 48000.0));
-    double icoef = 1.0 - coeff;
-    
-    double HT_coef = exp(-1.0 / (10.0 * 0.001 * 48000.0));
-    double HT_icof = 1.0 - HT_coef;
-    double HT_envl[2];
-    
-    double rms_sin[2] = { 0.0, }, rms_cos[2] = { 0.0, }, rms[2] = { 0.0, };
-    double peak[2] = {0.0, }, pp = 0.0;
-    
-    static constexpr double logistics_k = 950.0;
-    
-    // it relates to how Hilbert transforms into RMS in low frequencies.
-    // High number will change Hilbert to RMS quickly, low number will change gradually.
-    // Also high number will mangle transients more likely
-    // it does take effect in highend, but well beyond 20kHz.
-    
-    // Live and Eco looks like 4
-    // Presice looks 4~6
-    // Insane looks like 6~8
-    static constexpr int numCoefs = 6; // Number of coefficients, must be even
-    static constexpr int numCoefsHalf = numCoefs / 2;
-    double transition = 2*20.0/48000; // Sampling frequency is 44.1 kHz. Approx. 90 deg phase difference band is from 20 Hz to 22050 Hz - 20 Hz. The transition bandwidth is twice 20 Hz.
-
-    double coefs[numCoefs];
-    
-    double c[2][numCoefsHalf];
-
+    enum {
+        path_ref = 0,
+        path_sft = 1,
+        path_num = 2
+    };
     enum {
         io_x = 0,
         io_y = 1,
         io_num = 2
     };
     enum {
-        path_ref = 0,
-        path_sft = 1,
-        path_num = 2
+        x1 = 0, x2 = 1,
+        y1 = 0, y2 = 1,
+        order = 2
     };
-    // 2-channel, 2-path, 2-state(x, y), 2-memory(x1, x2), numCoefs-stages,
-    double state[2][path_num][io_num][2][numCoefs] = {0, };
-
-    double ap_state[2][4][2] = {0, };
-    double ap_coef[4] = {1.0, 0.6681786379192988, 0.41421356237309503, 0.198912367379658};
+    ParamValue HT_coefs[path_num][HT_stage];
+    ParamValue state[2][path_num][io_num][order][HT_stage] = {0, }; // 2-channel, 2-path, 2-state(x, y), 2-order(x1, x2), numCoefs-stages,
+    
+    /*
+     BS1770 k-weight filter
+     Provided filter coefficients in paper are for a sampling rate of 48 kHz, with 'cramp'.
+     
+     With un-cramped(reference : FabFilter Pro-Q 3) EQ, correct parameters are:
+     
+     Pre-Filter
+     f = 1500.0
+     Q = 1.007
+     dB = 4.0
+     ERROR = +- 0.005dB
+     
+     LRB
+     f = 38.134
+     Q = 0.70758
+     level = +0.038dB
+     
+     These should be over 192 kHz.
+     
+     With cramped EQ:
+     
+     Pre-Filter
+     f = 1681.8540338092508599234833913
+     q = 1 / sqrt(2) == M_SQRT1_2
+     gain = 3.999849576502195080962565
+     
+     RLB
+     f = 38.11054352868593
+     q = 0.5
+     */
+    static constexpr ParamValue PF_FREQ  = 1500.0;
+    static constexpr ParamValue PF_Q     = M_SQRT1_2;
+    static constexpr ParamValue PF_dB    = 4.0;
+    static constexpr ParamValue RLB_FREQ = 38.134;
+    static constexpr ParamValue RLB_Q    = 0.70758;
+    simpleSVF BS1770_PF[2], BS1770_RLB[2];
 };
 
 //------------------------------------------------------------------------

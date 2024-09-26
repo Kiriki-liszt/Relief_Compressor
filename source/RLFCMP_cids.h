@@ -19,39 +19,10 @@ static const Steinberg::FUID kRLFCMP_ControllerUID (0xA8D88BE9, 0x26535B50, 0xBB
 
 enum {
     kParamBypass = 0,
-    kParamSoftBypass, 
     kParamZoom,
     kParamOS,          // change it to HQ mode?
     
     kParamSidechainFilter, // BS1770 on/off
-    
-    // GML 8900 ~ MDWDRC's method is not so straight-forward
-    // As patent shows, attack comes from exponent parameter('Exponent'), and adds corrective release('Timing') after
-    // Looks like some Airwindows type of algo...
-    // maybe, he was right after all
-    
-    // GML 8900 focuses on Attack blend - Release does not change while blending - for dynamic range control
-    // Weiss DS1 focuses on Release blend - Attack does nor change while blending - for getting the right feel when mastering
-    
-    // GML has fast attack / fast release and slow attack / slow release
-    // So, fast release cannot take over slow release
-    // resulting 2-stage attack and fixed slow release.
-    // Meaning, It generally smooth out dynamic range, but able to catch fast peak if happened
-    // truly a dynamic range contoller
-    
-    // Weiss has same attack, but has fast release and slow release
-    // resulting 1-stage attack and 2-stage release.
-    // Meaning, fast GR will start to recover fast, and slow down as returning
-    // natural? program dependant? auto release - like.
-    
-    // I think 2-RMS detectors might work better
-    
-    // Attack - Release - Bias - Blend ?
-    
-    // Attack is in Log, but Release is in Linear, like MH-CS and GML
-    
-    // GML style   : Attack - Release - NULL -Bias
-    // Weiss style : Attack - Fast R - Slow R - AVG
     
     // Envelope Detection
     kParamAttack,  // in ms, Fast RMS : *= 1/2 , Slow RMS : *= 5
@@ -68,7 +39,8 @@ enum {
     kParamMakeup,
     
     kParamMix,
-    kParamOutput
+    kParamOutput,
+    kParamSoftBypass
 };
 
 //------------------------------------------------------------------------

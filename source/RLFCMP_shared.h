@@ -9,27 +9,11 @@
 
 #define _USE_MATH_DEFINES
 #include <cmath>
+#include <cstring>
 #include <algorithm>
 #include <vector>
 #include <queue>
 #include <numeric>
-#ifndef M_PI
-#define M_PI        3.14159265358979323846264338327950288   /* pi             */
-#endif
-#ifndef M_1_PI
-#define M_1_PI      0.318309886183790671537767526745028724  /* 1/pi           */
-#endif
-
-// at 48000
-
-// BS1700 High Shelf
-// f = 1681.8540338092508599234833913
-// q = 1 / sqrt(2) == M_SQRT1_2
-// gain = 3.999849576502195080962565
-
-// BS1770 Low Cut
-// f = 38.11054352868593
-// q = 0.5
 
 namespace yg331 {
 //------------------------------------------------------------------------
@@ -38,6 +22,17 @@ using SampleRate = Steinberg::Vst::SampleRate;
 using int32      = Steinberg::int32;
 using uint32     = Steinberg::uint32;
 
+typedef enum {
+    overSample_1x,
+    overSample_2x,
+    overSample_4x,
+    overSample_8x,
+    overSample_num = 3
+} overSample;
+
+//------------------------------------------------------------------------
+//  Class for converter
+//------------------------------------------------------------------------
 class DecibelConverter
 {
 public:
@@ -164,28 +159,51 @@ private:
     int32 numSteps = -1;
 };
 
-typedef enum {
-    overSample_1x,
-    overSample_2x,
-    overSample_4x,
-    overSample_8x,
-    overSample_num = 3
-} overSample;
+// GML 8900 ~ MDWDRC's method is not so straight-forward
+// As patent shows, attack comes from exponent parameter('Exponent'), and adds corrective release('Timing') after
+// Looks like some Airwindows type of algo...
+// maybe, he was right after all
 
+// GML 8900 focuses on Attack blend - Release does not change while blending - for dynamic range control
+// Weiss DS1 focuses on Release blend - Attack does nor change while blending - for getting the right feel when mastering
+
+// GML has fast attack / fast release and slow attack / slow release
+// So, fast release cannot take over slow release
+// resulting 2-stage attack and fixed slow release.
+// Meaning, It generally smooth out dynamic range, but able to catch fast peak if happened
+// truly a dynamic range contoller
+
+// Weiss has same attack, but has fast release and slow release
+// resulting 1-stage attack and 2-stage release.
+// Meaning, fast GR will start to recover fast, and slow down as returning
+// natural? program dependant? auto release - like.
+
+// I think 2-RMS detectors might work better
+
+// Attack - Release - Bias - Blend ?
+
+// Attack is in Log, but Release is in Linear, like MH-CS and GML
+
+// GML style   : Attack - Release - NULL -Bias
+// Weiss style : Attack - Fast R - Slow R - AVG
+
+//------------------------------------------------------------------------
+//  Min, Max, Default of Parameters
+//------------------------------------------------------------------------
 static constexpr ParamValue dftBypass          = 0.0;
 static constexpr ParamValue dftSoftBypass      = 0.0;
 static constexpr ParamValue dftSidechainFilter = 1.0;
 
-static constexpr ParamValue minAttack    = 1.5;
+static constexpr ParamValue minAttack    = 1.2;
 static constexpr ParamValue maxAttack    = 70.0;
 static constexpr ParamValue dftAttack    = 8.0;
 
-static constexpr ParamValue minRelease   = 20.0;
+static constexpr ParamValue minRelease   = 10.0;
 static constexpr ParamValue maxRelease   = 2000.0;
 static constexpr ParamValue dftRelease   = 80.0;
 
-static constexpr ParamValue minBias      = -24.0;
-static constexpr ParamValue maxBias      = 24.0;
+static constexpr ParamValue minBias      = -12.0;
+static constexpr ParamValue maxBias      = 12.0;
 static constexpr ParamValue dftBias      = 0.0;
 
 static constexpr ParamValue minThreshold = -40.0;
@@ -212,7 +230,6 @@ static constexpr ParamValue minOutput    = -12.0;
 static constexpr ParamValue maxOutput    = 12.0;
 static constexpr ParamValue dftOutput    = 0.0;
 
-static const ParameterConverter paramZoom     (minAttack,    maxAttack,    ParameterConverter::paramType::log);
 static const ParameterConverter paramAttack   (minAttack,    maxAttack,    ParameterConverter::paramType::log);
 static const ParameterConverter paramRelease  (minRelease,   maxRelease,   ParameterConverter::paramType::log);
 static const ParameterConverter paramBias     (minBias,      maxBias,      ParameterConverter::paramType::range);
@@ -223,8 +240,9 @@ static const ParameterConverter paramMakeup   (minMakeup,    maxMakeup,    Param
 static const ParameterConverter paramMix      (minMix,       maxMix,       ParameterConverter::paramType::range);
 static const ParameterConverter paramOutput   (minOutput,    maxOutput,    ParameterConverter::paramType::range);
 
-
-
+//------------------------------------------------------------------------
+//  Hilbert Transform Designer, modified
+//------------------------------------------------------------------------
 namespace hiir {
 class PolyphaseIir2Designer {
 public:
@@ -281,7 +299,7 @@ private:
             j = -j;
             ++i;
         }
-        while (fabs (q_ii1) > 1e-100);
+        while (fabs (q_ii1) > 1e-150);
 
         return acc;
     };
@@ -300,7 +318,7 @@ private:
             j = -j;
             ++i;
         }
-        while (fabs (q_i2) > 1e-100);
+        while (fabs (q_i2) > 1e-150);
 
         return acc;
     };
@@ -321,17 +339,15 @@ private:
     bool           operator != (const PolyphaseIir2Designer &other) = delete;
 
 }; // class PolyphaseIir2Designer
-
-
 }  // namespace hiir
 
-
-
-
-
-#define maxTap 512
+//------------------------------------------------------------------------
+//  Kaiser-Bessel Filter designser for Oversampling
+//------------------------------------------------------------------------
 class Kaiser {
 public:
+    static constexpr int32 maxTap = 512;
+    
     static inline double Ino(double x)
     {
         double d = 0, ds = 1, s = 1;
@@ -382,10 +398,10 @@ public:
 
 class Flt {
 public:
-    double coef alignas(16)[maxTap] = { 0, };
-    double buff alignas(16)[maxTap] = { 0, };
+    double coef alignas(16)[Kaiser::maxTap] = { 0, };
+    double buff alignas(16)[Kaiser::maxTap] = { 0, };
     int now = 0;
-    int size = maxTap;
+    int size = Kaiser::maxTap;
     double* buff_ptr = buff;
     void acc() {
         now++;
@@ -403,26 +419,27 @@ public:
     }
 };
 
+//------------------------------------------------------------------------
+//  Some functions for smoothing corners
+//------------------------------------------------------------------------
 class smooth {
 public:
-    static double ABS(double in, double smoothness)
+    static inline double ABS(double in, double smoothness)
     {
         double err = sqrt(1.0 + smoothness * smoothness) - 1.0;
         return sqrt((in * in) + smoothness * smoothness) - err; //sqrt(smoothness);
-    };
+    }
 
-    static double Max(double a, double b, double smoothness)
+    static inline double Max(double a, double b, double smoothness)
     {
         return (a + b + ABS(a - b, smoothness)) * 0.5;
-    };
+    }
 
-    static double Logistics(double delta, double k, double epsilon = 0.0)
+    static inline double Logistics(double delta, double k)
     {
-        double init = 1.0 / (1.0 + exp(-k * delta));
-        if (1.0 - init < epsilon) init = 1.0;
-        else if (init < epsilon) init = 0.0;
-        return init;
-    };
+        // double init = 1.0 / (1.0 + exp(k * -delta)); // This was way to CPU intensive
+        return 0.5 + 0.5 * tanh(k * delta); // Still CPU heavy, but less then exp()
+    }
 };
 
 /*CrestFactor Class:
@@ -641,7 +658,7 @@ public:
     double processPeakBranched(const double& in) {
         
         double d = state01 - in;
-        double pp = smooth::Logistics(d, 100.0, 0.0); // (delta > 0) ? 1.0 : 0.0;
+        double pp = smooth::Logistics(d, 100.0); // (delta > 0) ? 1.0 : 0.0;
         pp *= pp;
         double nn = 1.0 - pp;
         state01 = (pp * alphaAttack + nn * alphaRelease) * state01
@@ -1356,6 +1373,163 @@ private:
     double sampleRate{ 0.0 };
 };
 
+class simpleSVF {
+public:
+    enum f_type
+    {
+        HighPass,
+        BandPass,
+        LowPass,
+        AllPass,
+        Bell,
+        LowShelf,
+        HighShelf,
+        
+        kFltNum
+    };
+
+    typedef struct _dataset{
+        bool   In = true;
+        double dB = 0.0;
+        double Hz = 1000.0;
+        double Q = 1.0;
+        f_type Type = Bell;
+        double Fs = 48000.0;
+
+        double w = Hz * M_PI / Fs;;
+        double g = tan(w);
+        double k = 2.0 / Q;
+        double gt0 = 1 / (1 + g * (g + k));
+        double gk0 = (g + k) * gt0;
+
+        double m0 = 1.0, m1 = 1.0, m2 = 1.0;
+        double v0 = 0.0, v1 = 0.0, v2 = 0.0;
+        double t0 = 0.0, t1 = 0.0, t2 = 0.0;
+        double ic1eq = 0.0;
+        double ic2eq = 0.0;
+    } dataset;
+
+    simpleSVF() {initSVF();}
+    
+    /*
+    simpleSVF& operator=(const simpleSVF& obj) {
+        memcpy(&flt, &obj.flt, sizeof(flt));
+        return *this;
+    }
+     */
+    
+    void setSVF(bool In, double Hz, double Q, double dB, f_type type, double Fs)
+    {
+        flt.In    = In;
+        flt.Fs    = Fs;
+        flt.Hz    = Hz;
+        flt.Q     = Q;
+        flt.dB    = dB;
+        flt.Type  = type;
+        
+        makeSVF();
+    }
+    
+    void setIn(bool In) { flt.In = In; }
+
+    void initSVF() {
+        flt.ic1eq = 0.0; flt.ic2eq = 0.0;
+    }
+
+    void makeSVF()
+    {
+        if (flt.Hz > flt.Fs / 2.0) flt.Hz = flt.Fs / 2.0;
+        flt.w = flt.Hz * M_PI / flt.Fs;
+        double g0 = tan(flt.w);
+        double k0 = 1.0 / flt.Q;
+        double A = pow(10.0, flt.dB / 40.0);
+
+        double kdA = k0 / A;
+        double kmA = k0 * A;
+        double gdSA = g0 / sqrt(A);
+        double gmSA = g0 * sqrt(A);
+        double AmA = A * A;
+
+        switch (flt.Type)
+        {
+            case HighPass:  flt.m0 = 1;   flt.m1 = 0;   flt.m2 = 0;   flt.g = g0;   flt.k = k0;   break;
+            case BandPass:  flt.m0 = 0;   flt.m1 = 1;   flt.m2 = 0;   flt.g = g0;   flt.k = k0;   break;
+            case LowPass:   flt.m0 = 0;   flt.m1 = 0;   flt.m2 = 1;   flt.g = g0;   flt.k = k0;   break;
+            case AllPass:   flt.m0 = 1;   flt.m1 = -k0; flt.m2 = 1;   flt.g = g0;   flt.k = k0;   break;
+            case Bell:      flt.m0 = 1;   flt.m1 = kmA; flt.m2 = 1;   flt.g = g0;   flt.k = kdA;  break;
+            case LowShelf:  flt.m0 = 1;   flt.m1 = kmA; flt.m2 = AmA; flt.g = gdSA; flt.k = k0;   break;
+            case HighShelf: flt.m0 = AmA; flt.m1 = kmA; flt.m2 = 1;   flt.g = gmSA; flt.k = k0;   break;
+            default: break;
+        }
+
+        flt.gt0 = 1.0 / (1.0 + flt.g * (flt.g + flt.k));
+        flt.gk0 = (flt.g + flt.k) * flt.gt0;
+        return;
+    }
+    
+    inline double computeSVF (double vin)
+    {
+        // tick serial(possibly quicker on cpus with low latencies)
+        flt.t0 = vin - flt.ic2eq;
+        flt.v0 = flt.gt0 * flt.t0 - flt.gk0 * flt.ic1eq; // high
+        flt.t1 = flt.g * flt.v0;
+        flt.v1 = flt.ic1eq + flt.t1; // band
+        flt.t2 = flt.g * flt.v1;
+        flt.v2 = flt.ic2eq + flt.t2; // low
+        flt.ic1eq += 2.0 * flt.t1;
+        flt.ic2eq += 2.0 * flt.t2;
+
+        if (!flt.In) return vin; // NOT early return, to keep filter running while off for continuity
+        return flt.m0 * flt.v0 + flt.m1 * flt.v1 + flt.m2 * flt.v2;
+    }
+
+    inline double mag_response (double freq) {
+        if (!flt.In) return 1.0;
+
+        double ONE_OVER_SAMPLE_RATE = 1.0 / flt.Fs;
+
+        // exp(complex(0.0, -2.0 * pi) * frequency / sampleRate)
+        double _zr = (0.0) * freq * ONE_OVER_SAMPLE_RATE;
+        double _zi = (-2.0 * M_PI) * freq * ONE_OVER_SAMPLE_RATE;
+
+        // z = zr + zi;
+        double zr = exp(_zr) * cos(_zi);
+        double zi = exp(_zr) * sin(_zi);
+
+        double nr = 0, ni = 0;
+        double dr = 0, di = 0;
+
+        // z * z
+        double zsq_r = zr * zr - zi * zi;
+        double zsq_i = zi * zr + zr * zi;
+        double gsq = flt.g * flt.g;
+
+        // Numerator complex
+        double c_nzsq = (flt.m0 + flt.m1 * flt.g + flt.m2 * gsq);
+        double c_nz = (flt.m0 * -2.0 + flt.m2 * 2.0 * gsq);
+        double c_n = (flt.m0 + flt.m1 * -flt.g + flt.m2 * gsq);
+        nr = zsq_r * c_nzsq + zr * c_nz + c_n;
+        ni = zsq_i * c_nzsq + zi * c_nz;
+
+        // Denominator complex
+        double c_dzsq = (1.0 + flt.k * flt.g + gsq);
+        double c_dz = (-2.0 + 2.0 * gsq);
+        double c_d = (1.0 + flt.k * -flt.g + gsq);
+        dr = zsq_r * c_dzsq + zr * c_dz + c_d;
+        di = zsq_i * c_dzsq + zi * c_dz;
+
+
+        // Numerator / Denominator
+        double norm = dr * dr + di * di;
+        double ddr = (nr * dr + ni * di) / norm;
+        double ddi = (ni * dr - nr * di) / norm;
+
+        return sqrt(ddr * ddr + ddi * ddi);
+    }
+
+private:
+    dataset flt;
+};
 
 //------------------------------------------------------------------------
 } // namespace yg331
