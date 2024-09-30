@@ -7,9 +7,133 @@
 #include "vstgui/plugin-bindings/vst3editor.h"
 #include "base/source/fstreamer.h"
 #include "pluginterfaces/base/ustring.h"
+#include "vstgui/vstgui_uidescription.h"
+#include "vstgui/uidescription/detail/uiviewcreatorattributes.h"
 
 
 using namespace Steinberg;
+
+
+static const std::string kAttrVuOnColor  = "vu-on-color";
+static const std::string kAttrVuOffColor = "vu-off-color";
+static const std::string kAttrPDclick    = "click-behave";
+static const std::string kAttrPDMin      = "update-min";
+static const std::string kAttrPDMax      = "update-max";
+namespace VSTGUI {
+class MyVUMeterFactory : public ViewCreatorAdapter
+{
+public:
+    //register this class with the view factory
+    MyVUMeterFactory() { UIViewFactory::registerViewCreator(*this); }
+    
+    //return an unique name here
+    IdStringPtr getViewName() const override { return "My Vu Meter"; }
+    
+    //return the name here from where your custom view inherites.
+    //    Your view automatically supports the attributes from it.
+    IdStringPtr getBaseViewName() const override { return UIViewCreator::kCControl; }
+    
+    //create your view here.
+    //    Note you don't need to apply attributes here as
+    //    the apply method will be called with this new view
+    CView* create(const UIAttributes & attributes, const IUIDescription * description) const override
+    {
+        CRect size(CPoint(45, 45), CPoint(400, 150));
+        return new MyVuMeter(size, 2);
+    }
+    
+    // apply custom attributes to your view
+    bool apply(CView* view, const UIAttributes& attributes, const IUIDescription* description) const SMTG_OVERRIDE
+    {
+        auto* vuMeter = dynamic_cast<MyVuMeter*> (view);
+        
+        if (!vuMeter)
+            return false;
+        
+        const auto* attr = attributes.getAttributeValue(UIViewCreator::kAttrOrientation);
+        if (attr)
+            vuMeter->setStyle(*attr == UIViewCreator::strVertical ? MyVuMeter::kVertical : MyVuMeter::kHorizontal);
+        
+        CColor color;
+        if (UIViewCreator::stringToColor(attributes.getAttributeValue(kAttrVuOnColor), color, description))
+            vuMeter->setVuOnColor(color);
+        if (UIViewCreator::stringToColor(attributes.getAttributeValue(kAttrVuOffColor), color, description))
+            vuMeter->setVuOffColor(color);
+        
+        return true;
+    }
+    
+    // add your custom attributes to the list
+    bool getAttributeNames(StringList& attributeNames) const SMTG_OVERRIDE
+    {
+        attributeNames.emplace_back(UIViewCreator::kAttrOrientation);
+        attributeNames.emplace_back(kAttrVuOnColor);
+        attributeNames.emplace_back(kAttrVuOffColor);
+        return true;
+    }
+    
+    // return the type of your custom attributes
+    AttrType getAttributeType(const std::string& attributeName) const SMTG_OVERRIDE
+    {
+        if (attributeName == UIViewCreator::kAttrOrientation)
+            return kListType;
+        if (attributeName == kAttrVuOnColor)
+            return kColorType;
+        if (attributeName == kAttrVuOffColor)
+            return kColorType;
+        return kUnknownType;
+    }
+    
+    // return the string value of the custom attributes of the view
+    bool getAttributeValue(
+                           CView* view,
+                           const string& attributeName,
+                           string& stringValue,
+                           const IUIDescription* desc) const SMTG_OVERRIDE
+    {
+        auto* vuMeter = dynamic_cast<MyVuMeter*> (view);
+        
+        if (!vuMeter)
+            return false;
+        
+        if (attributeName == UIViewCreator::kAttrOrientation)
+        {
+            if (vuMeter->getStyle() & MyVuMeter::kVertical)
+                stringValue = UIViewCreator::strVertical;
+            else
+                stringValue = UIViewCreator::strHorizontal;
+            return true;
+        }
+        else if (attributeName == kAttrVuOnColor)
+        {
+            UIViewCreator::colorToString(vuMeter->getVuOnColor(), stringValue, desc);
+            return true;
+        }
+        else if (attributeName == kAttrVuOffColor)
+        {
+            UIViewCreator::colorToString(vuMeter->getVuOffColor(), stringValue, desc);
+            return true;
+        }
+        return false;
+    }
+    
+    //------------------------------------------------------------------------
+    bool getPossibleListValues(
+                               const string& attributeName,
+                               ConstStringPtrList& values) const SMTG_OVERRIDE
+    {
+        if (attributeName == UIViewCreator::kAttrOrientation)
+        {
+            return UIViewCreator::getStandardAttributeListValues(UIViewCreator::kAttrOrientation, values);
+        }
+        return false;
+    }
+};
+
+//create a static instance so that it registers itself with the view factory
+MyVUMeterFactory          __gMyVUMeterFactory;
+} // namespace VSTGUI
+
 
 namespace yg331 {
 //------------------------------------------------------------------------
@@ -34,6 +158,53 @@ void DetectorIndicatorController::viewWillDelete(VSTGUI::CView* view)
 {
     if (dynamic_cast<UIViewSwitchContainer*>(view) == viewSwitch  && viewSwitch)    { viewSwitch-> unregisterViewListener(this); viewSwitch  = nullptr; }
 }
+
+VSTGUI::CView* VuMeterController::verifyView(CView* view,
+                  const UIAttributes&   /*attributes*/,
+                  const IUIDescription* /*description*/)
+{
+#define minVU -30.0 // need that margin at bottom
+#define maxVU 0.0
+    if (MyVuMeter* control = dynamic_cast<MyVuMeter*>(view); control) {
+        if (control->getTag() == kInLRMS || control->getTag() == kInLPeak)  {
+            vuMeterInL  = control;
+            vuMeterInL->setMin(minVU);
+            vuMeterInL->setMax(maxVU);
+            vuMeterInL->setDefaultValue(minVU);
+            vuMeterInL->registerViewListener(this);
+        }
+        if (control->getTag() == kInRRMS || control->getTag() == kInRPeak)  {
+            vuMeterInR  = control;
+            vuMeterInR->setMin(minVU);
+            vuMeterInR->setMax(maxVU);
+            vuMeterInR->setDefaultValue(minVU);
+            vuMeterInR-> registerViewListener(this);
+        }
+        if (control->getTag() == kOutLRMS || control->getTag() == kOutLPeak) {
+            vuMeterOutL = control;
+            vuMeterOutL->setMin(minVU);
+            vuMeterOutL->setMax(maxVU);
+            vuMeterOutL->setDefaultValue(minVU);
+            vuMeterOutL->registerViewListener(this);
+        }
+        if (control->getTag() == kOutRRMS || control->getTag() == kOutRPeak) {
+            vuMeterOutR = control;
+            vuMeterOutR->setMin(minVU);
+            vuMeterOutR->setMax(maxVU);
+            vuMeterOutR->setDefaultValue(minVU);
+            vuMeterOutR->registerViewListener(this);
+        }
+        if (control->getTag() == kGainReduction)   {
+            vuMeterGR   = control;
+            vuMeterGR->setMin(minVU);
+            vuMeterGR->setMax(maxVU);
+            vuMeterGR->setDefaultValue(0.0);
+            vuMeterGR->  registerViewListener(this);
+        }
+    }
+
+    return view;
+};
 
 //------------------------------------------------------------------------
 // LogRangeParameter Declaration
@@ -404,6 +575,12 @@ VSTGUI::IController* RLFCMP_Controller::createSubController (VSTGUI::UTF8StringP
         addDetectorIndicatorController (controller);
         return controller;
     }
+    if (VSTGUI::UTF8StringView(name) == "VuMeterController")
+    {
+        auto* controller = new VuMeterController(this);
+        addUIVuMeterController(controller);
+        return controller;
+    }
     return nullptr;
 }
 
@@ -508,22 +685,47 @@ tresult PLUGIN_API RLFCMP_Controller::notify(Vst::IMessage* message)
     
     if (strcmp (message->getMessageID (), "GUI") == 0)
     {
-        int64 _detectorIndicator = 0.0;
+        ParamValue getValue = 0.0;
 
-        if (message->getAttributes ()->getInt ("detectorIndicator", _detectorIndicator) == kResultTrue)
+        if (message->getAttributes ()->getFloat ("Input L", getValue) == kResultTrue) vuInLPeak  = getValue;
+        if (message->getAttributes ()->getFloat ("Input R", getValue) == kResultTrue) vuInRPeak  = getValue;
+        if (message->getAttributes ()->getFloat ("Output L", getValue) == kResultTrue) vuOutLPeak  = getValue;
+        if (message->getAttributes ()->getFloat ("Output R", getValue) == kResultTrue) vuOutRPeak  = getValue;
+        if (message->getAttributes ()->getFloat ("Gain Reduction", getValue) == kResultTrue)
         {
-            detectorIndicator = static_cast<int32> (_detectorIndicator);
-        }
-        
-        if (!detectorIndicatorControllers.empty()) {
-            for (auto iter = detectorIndicatorControllers.begin(); iter != detectorIndicatorControllers.end(); iter++) {
-                (*iter)->updateValue();
+            vuGainReduction  = getValue;
+            
+            if (!vuMeterControllers.empty())
+            {
+                for (auto iter = vuMeterControllers.begin(); iter != vuMeterControllers.end(); iter++)
+                {
+                    (*iter)->updateVuMeterValue();
+                }
             }
         }
         
         return kResultOk;
     }
     return EditControllerEx1::notify(message);
+}
+
+Steinberg::Vst::ParamValue RLFCMP_Controller::getVuMeterByTag(Steinberg::Vst::ParamID tag)
+{
+   switch (tag) {
+       case kInMono:     return vuInMono;    break;
+       case kInLRMS:    return vuInLRMS;    break;
+       case kInRRMS:    return vuInRRMS;    break;
+       case kInLPeak:    return vuInLPeak;    break;
+       case kInRPeak:    return vuInRPeak;    break;
+       case kOutMono:    return vuOutMono;   break;
+       case kOutLRMS:   return vuOutLRMS;   break;
+       case kOutRRMS:   return vuOutRRMS;   break;
+       case kOutLPeak:   return vuOutLPeak;   break;
+       case kOutRPeak:   return vuOutRPeak;   break;
+       case kGainReduction:     return vuGainReduction;     break;
+       default: break;
+   }
+   return 0;
 }
 //------------------------------------------------------------------------
 } // namespace yg331

@@ -43,5 +43,20 @@ enum {
     kParamSoftBypass
 };
 
+enum
+{
+    kInMono = 100,
+    kInLRMS,
+    kInRRMS,
+    kInLPeak,
+    kInRPeak,
+    kOutMono,
+    kOutLRMS,
+    kOutRRMS,
+    kOutLPeak,
+    kOutRPeak,
+    kGainReduction
+};
+
 //------------------------------------------------------------------------
 } // namespace yg331

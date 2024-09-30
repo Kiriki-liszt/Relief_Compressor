@@ -14,6 +14,7 @@
 #include <vector>
 #include <queue>
 #include <numeric>
+#include <complex>
 
 namespace yg331 {
 //------------------------------------------------------------------------
@@ -202,8 +203,8 @@ static constexpr ParamValue minRelease   = 10.0;
 static constexpr ParamValue maxRelease   = 2000.0;
 static constexpr ParamValue dftRelease   = 80.0;
 
-static constexpr ParamValue minBias      = -12.0;
-static constexpr ParamValue maxBias      = 12.0;
+static constexpr ParamValue minBias      = -18.0;
+static constexpr ParamValue maxBias      = 18.0;
 static constexpr ParamValue dftBias      = 0.0;
 
 static constexpr ParamValue minThreshold = -40.0;
@@ -1526,6 +1527,86 @@ public:
 
         return sqrt(ddr * ddr + ddi * ddi);
     }
+
+private:
+    dataset flt;
+};
+
+
+
+
+
+
+class SVF_FirstOrder {
+public:
+    enum filter_Type
+    {
+        kLowPass,
+        kHighPass
+    };
+    
+    typedef struct ds{
+        int    In = 0;
+        double Hz = 1000.0;
+        filter_Type Type = kLowPass;
+        double Fs = 48000.0;
+
+        double w = Hz * M_PI / Fs;;
+        double g = tan(w);
+
+        double m0 = 1.0, m2 = 1.0;
+        double v0 = 0.0, v2 = 0.0;
+        double t0 = 0.0, t2 = 0.0;
+        double iceq = 0.0;
+    } dataset;
+
+    SVF_FirstOrder()
+    {
+        initSVF();
+    };
+
+    void initSVF() {
+        flt.iceq = 0.0;
+    };
+
+    void setSVF(double fParamIn, double fParamHz, filter_Type fParamtype, double fParamFs)
+    {
+        flt.In    = fParamIn ? 1 : 0;
+        flt.Fs    = fParamFs;
+        flt.Hz    = fParamHz;
+        flt.Type  = fParamtype;
+
+        makeSVF();
+    }
+
+    void makeSVF()
+    {
+        if (flt.Hz > flt.Fs / 2.0) flt.Hz = flt.Fs / 2.0;
+        flt.w = flt.Hz * M_PI / flt.Fs;
+        flt.g = tan(flt.w);
+
+        switch (flt.Type)
+        {
+            case kLowPass:      flt.m0 = 0; flt.m2 = 1;   break;
+            case kHighPass:     flt.m0 = 1; flt.m2 = 0;   break;
+            default: break;
+        }
+
+        return;
+    };
+
+    double computeSVF (double vin)
+    {
+        // disable v1 stage
+        flt.t0 = vin - flt.iceq;
+        flt.v0 = flt.t0 / (1.0 + flt.g);// gt0 * t0;
+        flt.t2 = flt.g * flt.v0;
+        flt.v2 = flt.iceq + flt.t2;
+        flt.iceq += 2.0 * flt.t2;
+
+        if (flt.In != 1) return vin;
+        return flt.m0 * flt.v0 + flt.m2 * flt.v2;
+    };
 
 private:
     dataset flt;

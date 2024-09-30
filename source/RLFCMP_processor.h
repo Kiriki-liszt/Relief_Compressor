@@ -7,6 +7,8 @@
 #include "RLFCMP_shared.h"
 #include "public.sdk/source/vst/vstaudioeffect.h"
 
+
+
 namespace yg331 {
 
 //------------------------------------------------------------------------
@@ -40,7 +42,7 @@ public:
     Steinberg::tresult PLUGIN_API setupProcessing (Steinberg::Vst::ProcessSetup& newSetup) SMTG_OVERRIDE;
     
     /** Gets the current Latency in samples. */
-    // Steinberg::uint32  PLUGIN_API getLatencySamples() SMTG_OVERRIDE;
+    Steinberg::uint32  PLUGIN_API getLatencySamples() SMTG_OVERRIDE;
     
     /** Asks if a given sample size is supported see SymbolicSampleSizes. */
     Steinberg::tresult PLUGIN_API canProcessSampleSize (Steinberg::int32 symbolicSampleSize) SMTG_OVERRIDE;
@@ -57,13 +59,31 @@ protected:
     template <typename SampleType>
     void processAudio (SampleType** inputs, SampleType** outputs, int32 numChannels, SampleRate getSampleRate, int32 sampleFrames);
     
-    inline double getFastAttack  (ParamValue sec, SampleRate SR) { return exp(-1.0 / (0.25 * sec * 0.001 * SR)); }
-    inline double getSlowAttack  (ParamValue sec, SampleRate SR) { return exp(-1.0 / (9.0 * sec * 0.001 * SR)); }
-    inline double getFastRelease (ParamValue sec, SampleRate SR) { return exp(-1.0 / (0.5 * sec * 0.001 * SR)); }
-    inline double getSlowRelease (ParamValue sec, SampleRate SR) { return exp(-1.0 / (1.0 * sec * 0.001 * SR)); }
+    inline void sendFloat (Steinberg::Vst::IAttributeList::AttrID aid, double& value);
+    
+    static constexpr ParamValue fa = 0.25;
+    static constexpr ParamValue sa = 9.0;
+    static constexpr ParamValue fr = 0.5;
+    static constexpr ParamValue sr = 1.0;
+    // alpha = 1 - exp(-1 / (sec * 0.001 * SR)) = tan(1 / (2 * sec * 0.001 * SR))
+    inline ParamValue getFastAttack  (ParamValue sec, SampleRate SR) { return exp(-1.0 / (fa * sec * 0.001 * SR)); }
+    inline ParamValue getSlowAttack  (ParamValue sec, SampleRate SR) { return exp(-1.0 / (sa * sec * 0.001 * SR)); }
+    inline ParamValue getFastRelease (ParamValue sec, SampleRate SR) { return exp(-1.0 / (fr * sec * 0.001 * SR)); }
+    inline ParamValue getSlowRelease (ParamValue sec, SampleRate SR) { return exp(-1.0 / (sr * sec * 0.001 * SR)); }
     
     inline void call_after_SR_changed ()
     {
+        fast_atk  = getFastAttack (paramAttack. ToPlain(pAttack),  projectSR);
+        fast_rls  = getFastRelease(paramRelease.ToPlain(pRelease), projectSR);
+        slow_atk  = getSlowAttack (paramAttack. ToPlain(pAttack),  projectSR);
+        slow_rls  = getSlowRelease(paramRelease.ToPlain(pRelease), projectSR);
+        
+        for (int32 channel = 0; channel < 2; channel++)
+        {
+            BS1770_PF[channel]. setSVF(pSidechainFilter, PF_FREQ, PF_Q, PF_dB, simpleSVF::HighShelf, projectSR);
+            BS1770_RLB[channel].setSVF(pSidechainFilter, RLB_FREQ, RLB_Q, 0.0, simpleSVF::HighPass,  projectSR);
+        }
+        
         ParamValue transition = 2.0 * bw / projectSR; // 90 deg phase difference band is from 20 Hz to Nyquist - 20 Hz. The transition bandwidth is twice 20 Hz.
 
         ParamValue coefs[HT_order];
@@ -77,32 +97,23 @@ protected:
         // +90 deg path c coefficients
         for (int i = 0, j = 0; i < HT_order; i += 2)
             HT_coefs[path_sft][j++] = coefs[i];
-        
-        fast_atk  = getFastAttack(paramAttack.ToPlain(pAttack), projectSR);
-        fast_rls  = getFastRelease(paramRelease.ToPlain(pRelease), projectSR);
-        slow_atk  = getSlowAttack(paramAttack.ToPlain(pAttack), projectSR);
-        slow_rls  = getSlowRelease(paramRelease.ToPlain(pRelease), projectSR);
-        HT_coef   = exp(-1.0 / (8.0 * 0.001 * projectSR));
-        
-        for (int32 channel = 0; channel < 2; channel++)
-        {
-            BS1770_PF[channel]. setSVF(pSidechainFilter, PF_FREQ, PF_Q, PF_dB, simpleSVF::HighShelf, projectSR);
-            BS1770_RLB[channel].setSVF(pSidechainFilter, RLB_FREQ, RLB_Q, 0.0, simpleSVF::HighPass,  projectSR);
-        }
     }
     inline void call_after_parameter_changed ()
     {
-        fast_atk  = getFastAttack(paramAttack.ToPlain(pAttack), projectSR);
+        fast_atk  = getFastAttack (paramAttack. ToPlain(pAttack),  projectSR);
         fast_rls  = getFastRelease(paramRelease.ToPlain(pRelease), projectSR);
-        slow_atk  = getSlowAttack(paramAttack.ToPlain(pAttack), projectSR);
+        slow_atk  = getSlowAttack (paramAttack. ToPlain(pAttack),  projectSR);
         slow_rls  = getSlowRelease(paramRelease.ToPlain(pRelease), projectSR);
-        
+
         bias      = paramBias.ToPlain(pBias);
-        threshold = paramThreshold.ToPlain(pThreshold);
+        biasGain  = DecibelConverter::ToGain(-abs(bias));
         ratio     = paramRatio.ToPlain(pRatio);
         slope     = 1.0 / ratio - 1.0;
         knee      = paramKnee.ToPlain(pKnee);
         kneeHalf  = knee / 2.0;
+        threshold = (ratio == 1.0) ? 0.0 : paramThreshold.ToPlain(pThreshold) * (1.0 + (1.0/(ratio - 1.0))); // in dB
+        preGain   = (ratio == 1.0) ? 1.0 : DecibelConverter::ToGain(-paramThreshold.ToPlain(pThreshold));    // in Gain
+        makeup    = DecibelConverter::ToGain(paramMakeup.ToPlain(pMakeup));
         
         for (int32 channel = 0; channel < 2; channel++)
         {
@@ -131,27 +142,30 @@ protected:
     ParamValue pMix        = paramMix.      ToNormalized(dftMix);
     ParamValue pOutput     = paramOutput.   ToNormalized(dftOutput);
     
+    // Values for GUI
+    ParamValue Input_L  = 0.0, Input_R  = 0.0;
+    ParamValue Output_L = 0.0, Output_R = 0.0;
+    ParamValue Gain_Reduction = 0.0;
+    
     // Internal plain values
     SampleRate projectSR  = 48000.0;
     SampleRate internalSR = 192000.0;
-    int32      detectorIndicator = 0.0;
+    ParamValue detectorIndicator = 0.0;
     
-    ParamValue fast_atk = getFastAttack(dftAttack, projectSR);
-    ParamValue fast_rls = getFastRelease(dftRelease, projectSR);
-    ParamValue slow_atk = getSlowAttack(dftAttack, projectSR);
-    ParamValue slow_rls = getSlowRelease(dftAttack, projectSR);
-    
-    ParamValue HT_coef = exp(-1.0 / (8.0 * 0.001 * projectSR));
-    ParamValue HT_envl[2];
-    
-    ParamValue fast_rms[2], slow_rms[2];
-    
+    ParamValue fast_atk  = getFastAttack (dftAttack,  projectSR);
+    ParamValue fast_rls  = getFastRelease(dftRelease, projectSR);
+    ParamValue slow_atk  = getSlowAttack (dftAttack,  projectSR);
+    ParamValue slow_rls  = getSlowRelease(dftRelease, projectSR);
+
     ParamValue bias      = paramBias.ToPlain(pBias);
-    ParamValue threshold = paramThreshold.ToPlain(pThreshold);
+    ParamValue biasGain  = DecibelConverter::ToGain(-abs(bias));
     ParamValue ratio     = paramRatio.ToPlain(pRatio);
     ParamValue slope     = 1.0 / ratio - 1.0;
     ParamValue knee      = paramKnee.ToPlain(pKnee);
     ParamValue kneeHalf  = knee / 2.0;
+    ParamValue threshold = (ratio == 1.0) ? 0.0 : paramThreshold.ToPlain(pThreshold) * (1.0 + (1.0/(ratio - 1.0))); // in dB
+    ParamValue preGain   = (ratio == 1.0) ? 1.0 : DecibelConverter::ToGain(-paramThreshold.ToPlain(pThreshold));    // in Gain
+    ParamValue makeup    = DecibelConverter::ToGain(paramMakeup.ToPlain(pMakeup));
     
     /*
      numCoefs
@@ -169,9 +183,10 @@ protected:
      TDR Presice  3x2 coef, bw = 300, k = 950
      TDR Live/Eco 2x2 coef, bw = 100, k = 800
      */
-    static constexpr ParamValue k_lin = 300.0;
+    static constexpr ParamValue k_HT = 300.0;
+    static constexpr ParamValue k_rms = 600.0; // if small, very short attack makes step in release
     static constexpr ParamValue k_log = 100.0;
-    static constexpr ParamValue bw = 300.0;
+    static constexpr ParamValue bw = 300.0; // Hz
     static constexpr int32 HT_stage = 3;
     static constexpr int32 HT_order = HT_stage * 2; // Number of coefficients, must be even
 
@@ -192,6 +207,7 @@ protected:
     };
     ParamValue HT_coefs[path_num][HT_stage];
     ParamValue state[2][path_num][io_num][order][HT_stage] = {0, }; // 2-channel, 2-path, 2-state(x, y), 2-order(x1, x2), numCoefs-stages,
+    ParamValue fast_rms[2], slow_rms[2];
     
     /*
      BS1770 k-weight filter
@@ -200,31 +216,16 @@ protected:
      With un-cramped(reference : FabFilter Pro-Q 3) EQ, correct parameters are:
      
      Pre-Filter
-     f = 1500.0
-     Q = 1.007
-     dB = 4.0
+     f = 1500.0 / Q = 1.007 / dB = 4.0
      ERROR = +- 0.005dB
      
      LRB
-     f = 38.134
-     Q = 0.70758
-     level = +0.038dB
+     f = 38.134 / Q = 0.70758 / level = +0.038dB
      
-     These should be over 192 kHz.
-     
-     With cramped EQ:
-     
-     Pre-Filter
-     f = 1681.8540338092508599234833913
-     q = 1 / sqrt(2) == M_SQRT1_2
-     gain = 3.999849576502195080962565
-     
-     RLB
-     f = 38.11054352868593
-     q = 0.5
+     Pre-Warp works fine, since it's only shlelf
      */
     static constexpr ParamValue PF_FREQ  = 1500.0;
-    static constexpr ParamValue PF_Q     = M_SQRT1_2;
+    static constexpr ParamValue PF_Q     = M_SQRT1_2; // == 1.0 ~= 1.007
     static constexpr ParamValue PF_dB    = 4.0;
     static constexpr ParamValue RLB_FREQ = 38.134;
     static constexpr ParamValue RLB_Q    = 0.70758;
@@ -233,3 +234,16 @@ protected:
 
 //------------------------------------------------------------------------
 } // namespace yg331
+/*
+ BS1770 k-weight filter
+ With cramped EQ:
+ 
+ Pre-Filter
+ f = 1681.8540338092508599234833913
+ q = 1 / sqrt(2) == M_SQRT1_2
+ gain = 3.999849576502195080962565
+ 
+ RLB
+ f = 38.11054352868593
+ q = 0.5
+ */
