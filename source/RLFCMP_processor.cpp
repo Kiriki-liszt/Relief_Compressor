@@ -399,16 +399,6 @@ void RLFCMP_Processor::processAudio(
             double sqared = sideChain * sideChain; // input squared
             
             /*
-             What I want to do - ADAA of rectifier
-             
-             "sqared = sideChain * sideChain" is a non-linear func and ADAA can be applied.
-             AA-IIR compensated will work good, but I havn't done math so long, I forgot ALL.
-             
-             Antiderivative Antialiasing with Frequency Compensation for Stateful Systems
-             https://www.dafx.de/paper-archive/2022/papers/DAFx20in22_paper_4.pdf
-             */
-            
-            /*
              Envelope Detector
              
              Envelop(Level) Detector consists of Rectifier + Capacitor.
@@ -421,6 +411,23 @@ void RLFCMP_Processor::processAudio(
              correct way would be oversampling by x4 it with TPT, but I'm aiming for a Zero-latency for realtime use.
              Maybe, MZTi kernal with very small size might work, too.
              It kinda looks like high shelf, but changes center freq and gain dB continuously.
+             */
+            
+            /*
+             What I want to do - ADAA to rectifier and coefficient switching
+             
+             "sqared = sideChain * sideChain" is a non-linear func and ADAA can be applied.
+             Also, standard if-else is massive aliasing algo, Logistics function is little less, but not perfect.
+             
+             AA-IIR compensated will work good, but I havn't done math so long, I forgot ALL.
+             
+             Antiderivative Antialiasing with Frequency Compensation for Stateful Systems
+             https://www.dafx.de/paper-archive/2022/papers/DAFx20in22_paper_4.pdf
+             */
+            
+            /*
+             Question is, typical compressors have effective threshold to be inconsistant by time constants.
+             The only compressor that I know works consistantly is Sonnox Oxford Dynamics by Paul Frindle.
              */
 
             double vin = HT_dtct;
@@ -443,7 +450,7 @@ void RLFCMP_Processor::processAudio(
 
             // apply bias
             if (bias > 0) fast_env *= biasGain; // if +6dB, fast - 6dB
-            else          slow_env *= biasGain;  // if -6dB, slow - 6dB
+            else          slow_env *= biasGain; // if -6dB, slow - 6dB
             
             delta = fast_env - slow_env;
             pp = smooth::Logistics(delta, k_log);
