@@ -357,17 +357,17 @@ public:
             d += 2;
             ds *= x * x / (d * d);
             s += ds;
-        } while (ds > s * 1e-6);
+        } while (ds > s * 1e-50);
         return s;
     };
 
-    static void calcFilter(double Fs, double Fa, double Fb, int M, double Att, double* dest)
+    static void calcFilter(double Fs, double Fa, double Fb, int M, double Att, double dest [])
     {
         // Kaiser windowed FIR filter "DIGITAL SIGNAL PROCESSING, II" IEEE Press pp 123-126.
 
         int Np = (M - 1) / 2;
         double A[maxTap] = { 0, };
-        double Alpha;
+        double Alpha; // == pi * alpha (wikipedia)
         double Inoalpha;
 
         A[0] = 2 * (Fb - Fa) / Fs;
@@ -393,7 +393,31 @@ public:
         {
             dest[j] = dest[M - 1 - j];
         }
+    }
+    
+    static void calcFilter2(int length, double alpha, double dest [])
+    {
+        int N = length - 1;
+        float Alpha = M_PI * alpha;
+        float Inoalpha;
 
+        Inoalpha = Ino(Alpha);
+
+        for (int n = 0; n <= N; n++)
+        {
+            dest[n] = Ino(Alpha * sqrt(1.0 - (2.0 * (double)n / (double)N - 1.0) * (2.0 * (double)n / (double)N - 1.0))) / Inoalpha;
+        }
+        dest[0] = Ino(0.0) / Inoalpha; // ARM with optimizer level O3 returns NaN == sqrt(1.0 - n/n), while x64 does not...
+        dest[N] = Ino(0.0) / Inoalpha;
+
+        float pwr = 0.0;
+        for (int i = 0; i < length; i++) {
+            pwr += dest[i];
+        }
+        pwr = 1.0 / pwr;
+        for (int i = 0; i < length; i++) {
+            dest[i] *= pwr;
+        }
     }
 };
 
@@ -1613,4 +1637,104 @@ private:
 };
 
 //------------------------------------------------------------------------
+
+
+
+
+
+
+class delayLine
+{
+public:
+    delayLine (int maxDelayInSamples = minTotalSize)
+    {
+        setMaximumDelayInSamples (maxDelayInSamples);
+    }
+    
+    void setMaximumDelayInSamples (int maxDelayInSamples)
+    {
+        if (maxDelayInSamples < minTotalSize) maxDelayInSamples = minTotalSize;
+        
+        totalSize = maxDelayInSamples;
+        
+        for (auto& iter : bufferData)
+            iter.resize(totalSize);
+        
+        reset();
+    }
+    int getMaximumDelayInSamples() const noexcept       { return totalSize; }
+    
+    
+    void setDelay (int newDelayInSamples)
+    {
+        if (newDelayInSamples < 0) newDelayInSamples = 0;
+        if (newDelayInSamples > totalSize) newDelayInSamples = totalSize;
+
+        delay = newDelayInSamples;
+    }
+    int getDelay() const
+    {
+        return delay;
+    }
+    
+    void prepare (int numChannels)
+    {
+        if (numChannels <= 0) numChannels = 2;
+
+        bufferData.resize(numChannels);
+        for (auto& iter : bufferData)
+            iter.resize(totalSize);
+
+        writePos.resize (numChannels);
+        readPos.resize  (numChannels);
+
+        reset();
+    }
+
+    void reset()
+    {
+        for (auto vec : { &writePos, &readPos })
+            std::fill (vec->begin(), vec->end(), 0);
+
+        for (auto& iter : bufferData)
+            std::fill (iter.begin(), iter.end(), 0.0);
+    }
+
+    void pushSample (int channel, double sample)
+    {
+        bufferData[channel][writePos[(size_t) channel]] = sample;
+        
+        writePos[(size_t) channel] = (writePos[(size_t) channel] + totalSize - 1) % totalSize;
+    }
+
+    double popSample (int channel)
+    {
+        auto index = (readPos[(size_t) channel] + delay) % totalSize;
+
+        double result = bufferData[channel][index];
+
+        readPos[(size_t) channel] = (readPos[(size_t) channel] + totalSize - 1) % totalSize;
+
+        return result;
+    }
+    
+    double getSample (int channel, int pos)
+    {
+        auto index = (readPos[(size_t) channel] + pos) % totalSize;
+
+        return bufferData[channel][index];
+    }
+
+
+private:
+    //==============================================================================
+    static constexpr int minTotalSize = 1;
+    
+    //==============================================================================
+    std::vector<std::vector<double>> bufferData;
+    std::vector<int> writePos, readPos;
+    int delay = 0;
+    int totalSize = minTotalSize;
+};
+
 } // namespace yg331

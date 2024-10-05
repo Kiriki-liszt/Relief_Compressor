@@ -230,6 +230,12 @@ protected:
     static constexpr ParamValue RLB_FREQ = 38.134;
     static constexpr ParamValue RLB_Q    = 0.70758;
     simpleSVF BS1770_PF[2], BS1770_RLB[2];
+    
+    
+    int32 lookaheadSize = 0;
+    delayLine lookAheadDelayLine;
+    delayLine latencyDelayLine;
+    double LAH_coef[256] = {0.0, };
 };
 
 //------------------------------------------------------------------------

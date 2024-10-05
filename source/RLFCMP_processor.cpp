@@ -194,11 +194,26 @@ inline void RLFCMP_Processor::sendFloat (Steinberg::Vst::IAttributeList::AttrID 
 tresult PLUGIN_API RLFCMP_Processor::setupProcessing (Vst::ProcessSetup& newSetup)
 {
     // This happens BEFORE setState
-    fprintf (stdout, "setupProcessing\n");
+    // fprintf (stdout, "setupProcessing\n");
+    
+    Vst::SpeakerArrangement arr;
+    getBusArrangement (Steinberg::Vst::BusDirections::kOutput, 0, arr);
+    auto numChannels = Vst::SpeakerArr::getChannelCount (arr);
+    lookaheadSize = std::min((int)(1.0 * 0.001 * newSetup.sampleRate), 256); // fixed lookahead at 0.5ms
+    
+    lookAheadDelayLine.setMaximumDelayInSamples(256); // 384000/2000 as max
+    lookAheadDelayLine.prepare(numChannels);
+    lookAheadDelayLine.setDelay(lookaheadSize);
+    latencyDelayLine.setMaximumDelayInSamples(256); // 384000/2000 as max
+    latencyDelayLine.prepare(numChannels);
+    latencyDelayLine.setDelay(lookaheadSize);
+    
+    Kaiser::calcFilter2(lookaheadSize, 3.0, LAH_coef); // ((alpha * pi)/0.1102) + 8.7, alpha == 3 -> -94.22 dB
+    
     if (projectSR != newSetup.sampleRate)
     {
-        fprintf (stdout, "projectSR = %f\n", projectSR);
-        fprintf (stdout, "newSetup.sampleRate = %f\n", newSetup.sampleRate);
+        // fprintf (stdout, "projectSR = %f\n", projectSR);
+        // fprintf (stdout, "newSetup.sampleRate = %f\n", newSetup.sampleRate);
         projectSR = newSetup.sampleRate;
         
         if      (projectSR > 96000.0) internalSR = projectSR;
@@ -215,7 +230,7 @@ tresult PLUGIN_API RLFCMP_Processor::setupProcessing (Vst::ProcessSetup& newSetu
 
 uint32  PLUGIN_API RLFCMP_Processor::getLatencySamples()
 {
-    return 1;
+    return lookaheadSize;
 }
 
 //------------------------------------------------------------------------
@@ -238,7 +253,7 @@ tresult PLUGIN_API RLFCMP_Processor::setState (IBStream* state)
     // called when we load a preset, the model has to be reloaded
     if (!state)
         return kResultFalse;
-    fprintf (stdout, "setState\n");
+    // fprintf (stdout, "setState\n");
     IBStreamer streamer (state, kLittleEndian);
 
     int32           savedBypass     = 0;
@@ -473,12 +488,28 @@ void RLFCMP_Processor::processAudio(
             else
                 gain = slope * overshoot;
             
+            // look-ahead with FIR smoothing, Kaiser window
+            // best harmonic rejection at low tap size(0.5ms, 24 taps at 48000)
+            // Pro-C 2 uses A-symmetrical shape. does it help?
+            lookAheadDelayLine.pushSample(channel, gain);
+            
+            double gg = 0.0;
+            for (int i = 0; i < lookaheadSize; i++)
+                gg += LAH_coef[i] * lookAheadDelayLine.getSample(channel, i);
+            
+            lookAheadDelayLine.popSample(channel);
+            
+            gain = gg;
+            
             if (gain < GR_Max) GR_Max = gain;
             
             gain = DecibelConverter::ToGain(gain);
             
             detectorIndicator = (gain < 0.9) ? ((fast_env > slow_env) ? 2 : 1) : 0;
             // detectorIndicator = (fast_env > slow_env) ? 2 : 1;
+            
+            latencyDelayLine.pushSample(channel, inputSample);
+            inputSample = latencyDelayLine.popSample(channel);
             
             inputSample *= gain;
             

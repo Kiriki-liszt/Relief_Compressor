@@ -456,6 +456,14 @@ tresult PLUGIN_API RLFCMP_Controller::initialize (FUnknown* context)
     zoomParameter->addDependent(this);
     uiParameters.addParameter(zoomParameter);
     
+
+    tag          = 1001;
+    auto* paramControllerPage = new Vst::StringListParameter(STR16("controllerPage"), tag);
+    paramControllerPage->appendString (STR16("COMPRESSOR")); // first of StringList is default
+    paramControllerPage->appendString (STR16("SIDECHAIN EQ"));
+    paramControllerPage->addDependent(this);
+    parameters.addParameter (paramControllerPage);
+    
     return result;
 }
 
@@ -464,6 +472,7 @@ tresult PLUGIN_API RLFCMP_Controller::terminate ()
 {
     // Here the Plug-in will be de-instantiated, last possibility to remove some memory!
     getParameterObject(kParamZoom)->removeDependent(this);
+    getParameterObject(1001)->removeDependent(this);
 
     //---do not forget to call parent ------
     return EditControllerEx1::terminate ();
