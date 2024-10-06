@@ -48,6 +48,10 @@ tresult PLUGIN_API RLFCMP_Processor::initialize (FUnknown* context)
     
     // JUST for my sanity
     call_after_parameter_changed ();
+    SC_LF[0].setRange(0);
+    SC_LF[1].setRange(0);
+    SC_HF[0].setRange(1);
+    SC_HF[1].setRange(1);
 
     return kResultOk;
 }
@@ -92,10 +96,18 @@ tresult PLUGIN_API RLFCMP_Processor::process (Vst::ProcessData& data)
                         case kParamBypass:          pBypass     = (value > 0.5); break;
                         // case kParamZoom:       pZoom       = value; break;
                         // case kParamOS:         pOS         = value; break;
-                        case kParamSidechainFilter: pSidechainFilter = (value > 0.5); break;
+                        case kParamScLfIn:          pScLfIn     = (value > 0.5); break;
+                        case kParamScLfType:        pScLfType   = value; break;
+                        case kParamScLfFreq:        pScLfFreq   = value; break;
+                        case kParamScLfGain:        pScLfGain   = value; break;
+                        case kParamScHfIn:          pScHfIn     = (value > 0.5); break;
+                        case kParamScHfType:        pScHfType   = value; break;
+                        case kParamScHfFreq:        pScHfFreq   = value; break;
+                        case kParamScHfGain:        pScHfGain   = value; break;
+                        case kParamScListen:        pScListen   = (value > 0.5); break;
                         case kParamAttack:          pAttack     = value; break;
                         case kParamRelease:         pRelease    = value; break;
-                        case kParamBias:            pBias       = value; break;
+                        case kParamLookaheadEnable: pLookaheadEnable = (value > 0.5); break;
                         case kParamThreshold:       pThreshold  = value; break;
                         case kParamRatio:           pRatio      = value; break;
                         case kParamKnee:            pKnee       = value; break;
@@ -196,20 +208,6 @@ tresult PLUGIN_API RLFCMP_Processor::setupProcessing (Vst::ProcessSetup& newSetu
     // This happens BEFORE setState
     // fprintf (stdout, "setupProcessing\n");
     
-    Vst::SpeakerArrangement arr;
-    getBusArrangement (Steinberg::Vst::BusDirections::kOutput, 0, arr);
-    auto numChannels = Vst::SpeakerArr::getChannelCount (arr);
-    lookaheadSize = std::min((int)(1.0 * 0.001 * newSetup.sampleRate), 256); // fixed lookahead at 0.5ms
-    
-    lookAheadDelayLine.setMaximumDelayInSamples(256); // 384000/2000 as max
-    lookAheadDelayLine.prepare(numChannels);
-    lookAheadDelayLine.setDelay(lookaheadSize);
-    latencyDelayLine.setMaximumDelayInSamples(256); // 384000/2000 as max
-    latencyDelayLine.prepare(numChannels);
-    latencyDelayLine.setDelay(lookaheadSize);
-    
-    Kaiser::calcFilter2(lookaheadSize, 3.0, LAH_coef); // ((alpha * pi)/0.1102) + 8.7, alpha == 3 -> -94.22 dB
-    
     if (projectSR != newSetup.sampleRate)
     {
         // fprintf (stdout, "projectSR = %f\n", projectSR);
@@ -219,6 +217,22 @@ tresult PLUGIN_API RLFCMP_Processor::setupProcessing (Vst::ProcessSetup& newSetu
         if      (projectSR > 96000.0) internalSR = projectSR;
         else if (projectSR > 48000.0) internalSR = projectSR * 2.0;
         else                          internalSR = projectSR * 4.0;
+        
+        Vst::SpeakerArrangement arr;
+        getBusArrangement (Steinberg::Vst::BusDirections::kOutput, 0, arr);
+        auto numChannels = Vst::SpeakerArr::getChannelCount (arr);
+        lookaheadSize = std::min((int)(1.0 * 0.001 * newSetup.sampleRate), 256); // fixed lookahead at 0.5ms
+        halfTap = lookaheadSize / 2;
+        condition = lookaheadSize % 2;
+        
+        lookAheadDelayLine.setMaximumDelayInSamples(256); // 384000/2000 as max
+        lookAheadDelayLine.prepare(numChannels);
+        lookAheadDelayLine.setDelay(lookaheadSize);
+        latencyDelayLine.setMaximumDelayInSamples(256); // 384000/2000 as max
+        latencyDelayLine.prepare(numChannels);
+        latencyDelayLine.setDelay(lookaheadSize);
+        
+        Kaiser::calcFilter2(lookaheadSize, 3.0, LAH_coef); // ((alpha * pi)/0.1102) + 8.7, alpha == 3 -> -94.22 dB
         
         call_after_SR_changed ();
         call_after_parameter_changed (); // in case setState does not happen
@@ -253,11 +267,13 @@ tresult PLUGIN_API RLFCMP_Processor::setState (IBStream* state)
     // called when we load a preset, the model has to be reloaded
     if (!state)
         return kResultFalse;
+    
     // fprintf (stdout, "setState\n");
     IBStreamer streamer (state, kLittleEndian);
+    
+    // SAVE IN PLAIN VALUE
 
     int32           savedBypass     = 0;
-    // Vst::ParamValue savedZoom       = 0.0;
     // Vst::ParamValue savedOS         = 0.0;
     int32           savedSidechainFilter = 0.0;
     Vst::ParamValue savedAttack     = 0.0;
@@ -272,12 +288,9 @@ tresult PLUGIN_API RLFCMP_Processor::setState (IBStream* state)
     int32           savedSoftBypass = 0.0;
     
     if (streamer.readInt32 (savedBypass)     == false) savedBypass     = 0;
-    // if (streamer.readDouble(savedZoom)       == false) savedZoom       = 2.0 / 6.0;
     // if (streamer.readDouble(savedOS)         == false) savedOS         = 0.0;
-    if (streamer.readInt32 (savedSidechainFilter) == false) savedSidechainFilter = 0;
     if (streamer.readDouble(savedAttack)     == false) savedAttack     = paramAttack.ToNormalized(dftAttack);
     if (streamer.readDouble(savedRelease)    == false) savedRelease    = paramRelease.ToNormalized(dftRelease);
-    if (streamer.readDouble(savedBias)       == false) savedBias       = paramBias.ToNormalized(dftBias);
     if (streamer.readDouble(savedThreshold)  == false) savedThreshold  = paramThreshold.ToNormalized(dftThreshold);
     if (streamer.readDouble(savedRatio)      == false) savedRatio      = paramRatio.ToNormalized(dftRatio);
     if (streamer.readDouble(savedKnee)       == false) savedKnee       = paramKnee.ToNormalized(dftKnee);
@@ -288,10 +301,8 @@ tresult PLUGIN_API RLFCMP_Processor::setState (IBStream* state)
     
     pBypass = savedBypass > 0;
     // pOS = savedOS;
-    pSidechainFilter = savedSidechainFilter > 0;
     pAttack     = savedAttack;
     pRelease    = savedRelease;
-    pBias       = savedBias;
     pThreshold  = savedThreshold;
     pRatio      = savedRatio;
     pKnee       = savedKnee;
@@ -311,16 +322,14 @@ tresult PLUGIN_API RLFCMP_Processor::getState (IBStream* state)
     // here we need to save the model
     if (!state)
         return kResultFalse;
-    fprintf (stdout, "getState\n");
+    
+    // fprintf (stdout, "getState\n");
     IBStreamer streamer (state, kLittleEndian);
     
     streamer.writeInt32(pBypass ? 1 : 0);
-    // streamer.writeDouble(pZoom);
     // streamer.writeDouble(Steinberg::ToNormalized<ParamValue> (static_cast<ParamValue>(pOS), overSample_num));
-    streamer.writeInt32(pSidechainFilter ? 1 : 0);
     streamer.writeDouble(pAttack);
     streamer.writeDouble(pRelease);
-    streamer.writeDouble(pBias);
     streamer.writeDouble(pThreshold);
     streamer.writeDouble(pRatio);
     streamer.writeDouble(pKnee);
@@ -377,8 +386,9 @@ void RLFCMP_Processor::processAudio(
              It helps compressor to behave more natual (to human ear).
              */
             // sidechainFilter In/Out is controlled inside of SVF
-            sideChain = BS1770_PF [channel].computeSVF(inputSample);
-            sideChain = BS1770_RLB[channel].computeSVF(sideChain);
+            // SVF takes 20% of CPU
+            sideChain = SC_LF[channel].computeSVF(inputSample);
+            sideChain = SC_HF[channel].computeSVF(sideChain);
             
             /*
              Hilbert Detector
@@ -445,36 +455,29 @@ void RLFCMP_Processor::processAudio(
              The only compressor that I know works consistantly is Sonnox Oxford Dynamics by Paul Frindle.
              */
 
-            double vin = HT_dtct;
-            // slow detector, Hilbert
-            double delta = vin - slow_rms[channel];
-            double pp = smooth::Logistics(delta, k_HT); // (delta > 0) ? 1.0 : 0.0;
-            double nn = 1.0 - pp;
-            double g = (pp * slow_atk + nn * slow_rls);
-            slow_rms[channel] = g * slow_rms[channel] + (1.0 - g) * vin;
-            double slow_env = sqrt(slow_rms[channel]);
+            double env = 0.0;
             
-            vin = sqared;
-            // fast detector, plain rms
-            delta = vin - fast_rms[channel];
-            pp = smooth::Logistics(delta, k_rms); // (delta > 0) ? 1.0 : 0.0;
-            nn = 1.0 - pp;
-            g = (pp * fast_atk + nn * fast_rls);
-            fast_rms[channel] = g * fast_rms[channel] + (1.0 - g) * vin;
-            double fast_env = sqrt(fast_rms[channel]);
+            if (true) {
+                double vin = HT_dtct;
+                // slow detector, Hilbert
+                double delta = vin - slow_rms[channel];
+                double pp = smooth::Logistics(delta, k_HT); // (delta > 0) ? 1.0 : 0.0;
+                double nn = 1.0 - pp;
+                double g = (pp * atkCoef + nn * rlsCoef);
+                slow_rms[channel] = g * slow_rms[channel] + (1.0 - g) * vin;
+                env = sqrt(slow_rms[channel]);
+            }
+            else {
+                double vin = sqared;
+                // fast detector, plain rms
+                double delta = vin - fast_rms[channel];
+                double pp = smooth::Logistics(delta, k_rms); // (delta > 0) ? 1.0 : 0.0;
+                double  nn = 1.0 - pp;
+                double g = (pp * atkCoef + nn * rlsCoef);
+                fast_rms[channel] = g * fast_rms[channel] + (1.0 - g) * vin;
+                env = sqrt(fast_rms[channel]);
+            }
 
-            // apply bias
-            if (bias > 0) fast_env *= biasGain; // if +6dB, fast - 6dB
-            else          slow_env *= biasGain; // if -6dB, slow - 6dB
-            
-            delta = fast_env - slow_env;
-            pp = smooth::Logistics(delta, k_log);
-            nn = 1.0 - pp;
-            double env = pp * fast_env + nn * slow_env;
-            // double env = smooth::Max(fast_env, slow_env, 0.001);
-            // double env = std::max(fast_env, slow_env);
-            
-            //
             env = DecibelConverter::ToDecibel(env);
             
             double overshoot = env - (threshold);
@@ -494,8 +497,17 @@ void RLFCMP_Processor::processAudio(
             lookAheadDelayLine.pushSample(channel, gain);
             
             double gg = 0.0;
-            for (int i = 0; i < lookaheadSize; i++)
-                gg += LAH_coef[i] * lookAheadDelayLine.getSample(channel, i);
+            // Naive FIR convolution takes 63% of CPU
+            // for (int i = 0; i < lookaheadSize; i++)
+            //    gg += LAH_coef[i] * lookAheadDelayLine.getSample(channel, i);
+            
+            // if lookaheadSize == 24 -> halfTap == 11, 0~11,     12~23
+            // if lookaheadSize == 25 -> halfTap == 12, 0~11, 12, 13~24
+            
+            for (int i = 0; i < halfTap; i++)
+                gg += LAH_coef[i] * (lookAheadDelayLine.getSample(channel, i) + lookAheadDelayLine.getSample(channel, lookaheadSize - i));
+            if (condition) // if lookaheadSize is odd
+                gg += LAH_coef[halfTap] * lookAheadDelayLine.getSample(channel, halfTap);
             
             lookAheadDelayLine.popSample(channel);
             
@@ -505,8 +517,13 @@ void RLFCMP_Processor::processAudio(
             
             gain = DecibelConverter::ToGain(gain);
             
-            detectorIndicator = (gain < 0.9) ? ((fast_env > slow_env) ? 2 : 1) : 0;
-            // detectorIndicator = (fast_env > slow_env) ? 2 : 1;
+            if (pScListen)
+            {
+                inputSample = sideChain;
+                inputSample /= preGain;
+                gain = 1.0;
+                makeup = 1.0;
+            }
             
             latencyDelayLine.pushSample(channel, inputSample);
             inputSample = latencyDelayLine.popSample(channel);
@@ -514,6 +531,8 @@ void RLFCMP_Processor::processAudio(
             inputSample *= gain;
             
             inputSample *= makeup;
+            
+            
             
             if (inputSample > Out_Max) Out_Max = inputSample;
 

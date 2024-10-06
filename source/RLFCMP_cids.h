@@ -22,20 +22,28 @@ enum {
     kParamZoom,
     kParamOS,          // change it to HQ mode?
     
-    kParamSidechainFilter, // BS1770 on/off
+    kParamScLfIn,
+    kParamScLfType,
+    kParamScLfFreq,
+    kParamScLfGain,
+    
+    kParamScHfIn,
+    kParamScHfType,
+    kParamScHfFreq,
+    kParamScHfGain,
+    
+    kParamScListen,
     
     // Envelope Detection
-    kParamAttack,  // in ms, Fast RMS : *= 1/2 , Slow RMS : *= 5
-    kParamRelease, // Same?
-    kParamUNUSED,  //
-    kParamBias,
-    // Blend should keep max dB at constant, 0-50 -> 1 : 0-1 / 50-100 -> 1-0 : 1
-    // Crossover feel
+    kParamType,
+    kParamAttack,
+    kParamRelease,
+    kParamLookaheadEnable,
 
     // Non-Linear Transfer Curve
-    kParamThreshold,   // GML-stlye : input is turned up to make threshold go down, and turned down same amount. Silimar to Auto-gain of Matric Halo CS.
-    kParamRatio,       // HOW does ratio affects linear release curve to be log-like in GML 8900 ?????
-    kParamKnee,        // HOW does knee affects linear release curve to be log-like in MH-CS ?????
+    kParamThreshold,   // GML-stlye : input is turned up to make threshold go down, and turned down same amount. Silimar to Auto-gain. 
+    kParamRatio,
+    kParamKnee,
     kParamMakeup,
     
     kParamMix,

@@ -333,11 +333,81 @@ tresult PLUGIN_API RLFCMP_Controller::initialize (FUnknown* context)
     flags        = Vst::ParameterInfo::kIsBypass | Vst::ParameterInfo::kCanAutomate;
     parameters.addParameter(STR16("Bypass"), nullptr, stepCount, defaultVal, flags, tag);
     
-    tag          = kParamSidechainFilter;
-    stepCount    = 1;
-    defaultVal   = 0;
-    flags        = Vst::ParameterInfo::kCanAutomate | Vst::ParameterInfo::kIsList;
-    parameters.addParameter(STR16("SidechainFilter"), nullptr, stepCount, defaultVal, flags, tag);
+    tag          = kParamScLfIn;
+    auto* ParamScLfIn = new Vst::StringListParameter(STR16("SC LF In"), tag);
+    ParamScLfIn->appendString (STR16("OFF"));
+    ParamScLfIn->appendString (STR16("ON"));
+    ParamScLfIn->getInfo().defaultNormalizedValue = 1.0;
+    ParamScLfIn->setNormalized(1.0);
+    parameters.addParameter (ParamScLfIn);
+    
+    tag          = kParamScLfType;
+    auto* ParamScLfType = new Vst::StringListParameter(STR16("SC LF Type"), tag);
+    ParamScLfType->appendString (STR16("LowCut"));
+    ParamScLfType->appendString (STR16("LowShelf"));
+    ParamScLfType->getInfo().defaultNormalizedValue = 0.0;
+    parameters.addParameter (ParamScLfType);
+    
+    tag          = kParamScLfFreq;
+    flags        = Vst::ParameterInfo::kCanAutomate;
+    minPlain     = minScLfFreq;
+    maxPlain     = maxScLfFreq;
+    defaultPlain = dftScLfFreq;
+    stepCount    = 0;
+    auto* ParamScLfFreq = new LogRangeParameter(STR16("SC LF Freq"), tag, STR16("Hz"), minPlain, maxPlain, defaultPlain, stepCount, flags);
+    ParamScLfFreq->setPrecision(0);
+    parameters.addParameter(ParamScLfFreq);
+    
+    tag          = kParamScLfGain;
+    flags        = Vst::ParameterInfo::kCanAutomate;
+    minPlain     = minScLfGain;
+    maxPlain     = maxScLfGain;
+    defaultPlain = dftScLfGain;
+    stepCount    = 0;
+    auto* ParamScLfGain = new LinRangeParameter(STR16("SC LF Gain"), tag, STR16("dB"), minPlain, maxPlain, defaultPlain, stepCount, flags);
+    ParamScLfGain->setPrecision(1);
+    parameters.addParameter(ParamScLfGain);
+    
+    tag          = kParamScHfIn;
+    auto* ParamScHfIn = new Vst::StringListParameter(STR16("SC HF In"), tag);
+    ParamScHfIn->appendString (STR16("OFF"));
+    ParamScHfIn->appendString (STR16("ON"));
+    ParamScHfIn->getInfo().defaultNormalizedValue = 1.0;
+    ParamScHfIn->setNormalized(1.0);
+    parameters.addParameter (ParamScHfIn);
+    
+    tag          = kParamScHfType;
+    auto* ParamScHfType = new Vst::StringListParameter(STR16("SC HF Type"), tag);
+    ParamScHfType->appendString (STR16("HighCut"));
+    ParamScHfType->appendString (STR16("HighShelf"));
+    ParamScHfType->getInfo().defaultNormalizedValue = 1.0;
+    parameters.addParameter (ParamScHfType);
+    
+    tag          = kParamScHfFreq;
+    flags        = Vst::ParameterInfo::kCanAutomate;
+    minPlain     = minScHfFreq;
+    maxPlain     = maxScHfFreq;
+    defaultPlain = dftScHfFreq;
+    stepCount    = 0;
+    auto* ParamScHfFreq = new LogRangeParameter(STR16("SC HF Freq"), tag, STR16("Hz"), minPlain, maxPlain, defaultPlain, stepCount, flags);
+    ParamScHfFreq->setPrecision(0);
+    parameters.addParameter(ParamScHfFreq);
+    
+    tag          = kParamScHfGain;
+    flags        = Vst::ParameterInfo::kCanAutomate;
+    minPlain     = minScHfGain;
+    maxPlain     = maxScHfGain;
+    defaultPlain = dftScHfGain;
+    stepCount    = 0;
+    auto* ParamScHfGain = new LinRangeParameter(STR16("SC HF Gain"), tag, STR16("dB"), minPlain, maxPlain, defaultPlain, stepCount, flags);
+    ParamScHfGain->setPrecision(1);
+    parameters.addParameter(ParamScHfGain);
+    
+    tag          = kParamScListen;
+    auto* paramScListen = new Vst::StringListParameter(STR16("SC Listen"), tag);
+    paramScListen->appendString (STR16("OFF"));
+    paramScListen->appendString (STR16("ON"));
+    parameters.addParameter (paramScListen);
 
     tag          = kParamAttack;
     flags        = Vst::ParameterInfo::kCanAutomate;
@@ -358,16 +428,6 @@ tresult PLUGIN_API RLFCMP_Controller::initialize (FUnknown* context)
     auto* ParamRelease = new LogRangeParameter(STR16("Release"), tag, STR16("ms"), minPlain, maxPlain, defaultPlain, stepCount, flags);
     ParamRelease->setPrecision(1);
     parameters.addParameter(ParamRelease);
-    
-    tag          = kParamBias;
-    flags        = Vst::ParameterInfo::kCanAutomate;
-    minPlain     = minBias;
-    maxPlain     = maxBias;
-    defaultPlain = dftBias;
-    stepCount    = 0;
-    auto* ParamBias = new LinRangeParameter(STR16("Bias"), tag, STR16("dB"), minPlain, maxPlain, defaultPlain, stepCount, flags);
-    ParamBias->setPrecision(1);
-    parameters.addParameter(ParamBias);
 
     tag          = kParamThreshold;
     flags        = Vst::ParameterInfo::kCanAutomate;
@@ -505,10 +565,8 @@ tresult PLUGIN_API RLFCMP_Controller::setComponentState (IBStream* state)
     if (streamer.readInt32 (savedBypass)     == false) savedBypass     = 0;
     // if (streamer.readDouble(savedZoom)       == false) savedZoom       = 2.0 / 6.0;
     // if (streamer.readDouble(savedOS)         == false) savedOS         = 0.0;
-    if (streamer.readInt32 (savedSidechainFilter) == false) savedSidechainFilter = 0;
     if (streamer.readDouble(savedAttack)     == false) savedAttack     = paramAttack.ToNormalized(dftAttack);
     if (streamer.readDouble(savedRelease)    == false) savedRelease    = paramRelease.ToNormalized(dftRelease);
-    if (streamer.readDouble(savedBias)       == false) savedBias       = paramBias.ToNormalized(dftBias);
     if (streamer.readDouble(savedThreshold)  == false) savedThreshold  = paramThreshold.ToNormalized(dftThreshold);
     if (streamer.readDouble(savedRatio)      == false) savedRatio      = paramRatio.ToNormalized(dftRatio);
     if (streamer.readDouble(savedKnee)       == false) savedKnee       = paramKnee.ToNormalized(dftKnee);
@@ -520,10 +578,8 @@ tresult PLUGIN_API RLFCMP_Controller::setComponentState (IBStream* state)
     setParamNormalized(kParamBypass,     savedBypass ? 1 : 0);
     // setParamNormalized(kParamZoom,       savedZoom);
     // setParamNormalized(kParamOS,         savedOS);
-    setParamNormalized(kParamSidechainFilter,     savedSidechainFilter ? 1 : 0);
     setParamNormalized(kParamAttack,     savedAttack);
     setParamNormalized(kParamRelease,    savedRelease);
-    setParamNormalized(kParamBias,       savedBias);
     setParamNormalized(kParamThreshold,  savedThreshold);
     setParamNormalized(kParamRatio,      savedRatio);
     setParamNormalized(kParamKnee,       savedKnee);
