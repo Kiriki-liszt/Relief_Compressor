@@ -12,6 +12,9 @@
 #include <cstring>
 #include <algorithm>
 #include <vector>
+#include <deque>
+#include <complex>
+#include <array>
 
 namespace yg331 {
 //------------------------------------------------------------------------
@@ -27,6 +30,14 @@ typedef enum {
     overSample_8x,
     overSample_num = 3
 } overSample;
+
+enum detectorType
+{
+    Bold,
+    Smooth,
+    Clean,
+    detectorNum = 2
+};
 
 
 class simpleSVF {
@@ -139,7 +150,8 @@ public:
         return flt.m0 * flt.v0 + flt.m1 * flt.v1 + flt.m2 * flt.v2;
     }
 
-    inline double mag_response (double freq) {
+    inline double mag_response (double freq)
+    {
         if (!flt.In) return 1.0;
 
         double ONE_OVER_SAMPLE_RATE = 1.0 / flt.Fs;
@@ -183,7 +195,8 @@ public:
         return sqrt(ddr * ddr + ddi * ddi);
     }
 
-private:
+// for sake of inline
+// private:
     dataset flt;
 };
 
@@ -207,13 +220,13 @@ public:
     typedef struct ds
     {
         bool   In = true;
-        double Hz = 100.0;
+        double Freq = 100.0;
         double dB = 0.0;
         type   Type = Pass;
         range  Range = Low;
         double Fs = 48000.0;
 
-        double w = Hz * M_PI / Fs;;
+        double w = Freq * M_PI / Fs;;
         double g = tan(w);
 
         double m0 = 1.0, m2 = 1.0;
@@ -231,15 +244,28 @@ public:
         flt.iceq = 0.0;
     }
     
-    void setRange (int _range)
-    {
-        flt.Range = static_cast<range>(_range);
-    }
+    void   setIn(bool v) { flt.In = v; }
+    bool   getIn() const { return flt.In; }
     
-    void setSVF(double In, double Hz, double dB, int _type, double Fs)
+    void   setFreq(double v) { flt.Freq = v; }
+    double getFreq() const { return flt.Freq; }
+    
+    void   setGain(double v) { flt.dB = v; }
+    double getGain() const { return flt.dB; }
+    
+    void   setType(int v) { flt.Type = static_cast<type>(v); }
+    int    getType() const { return static_cast<int>(flt.Type); }
+    
+    void   setRange(int v) { flt.Range = static_cast<range>(v); }
+    int    getRange() const { return static_cast<int>(flt.Range); }
+
+    void   setFs(double v) { flt.Fs = v; }
+    double getFs() const { return flt.Fs; }
+    
+    void setSVF(double In, double Freq, double dB, int _type, double Fs)
     {
         flt.In    = In ? 1 : 0;
-        flt.Hz    = Hz;
+        flt.Freq  = Freq;
         flt.dB    = dB;
         flt.Type  = static_cast<type>(_type);
         flt.Fs    = Fs;
@@ -249,8 +275,8 @@ public:
 
     void makeSVF()
     {
-        if (flt.Hz > flt.Fs / 2.0) flt.Hz = flt.Fs / 2.0;
-        flt.w = flt.Hz * M_PI / flt.Fs;
+        if (flt.Freq > flt.Fs / 2.0) flt.Freq = flt.Fs / 2.0;
+        flt.w = flt.Freq * M_PI / flt.Fs;
         flt.g = tan(flt.w);
         double A = pow(10.0, flt.dB / 40.0);
         double AmA = A * A;
@@ -277,7 +303,7 @@ public:
         return;
     };
 
-    double computeSVF (double vin)
+    inline double computeSVF (double vin)
     {
         // disable v1 stage
         flt.t0 = vin - flt.iceq;
@@ -289,8 +315,41 @@ public:
         if (flt.In != 1) return vin;
         return flt.m0 * flt.v0 + flt.m2 * flt.v2;
     };
+    
+    inline double mag_response (double freq)
+    {
+        if (!flt.In) return 1.0;
 
-private:
+        double ONE_OVER_SAMPLE_RATE = 1.0 / flt.Fs;
+
+        // exp(complex(0.0, -2.0 * pi) * frequency / sampleRate)
+        double _zr = (0.0) * freq * ONE_OVER_SAMPLE_RATE;
+        double _zi = (-2.0 * M_PI) * freq * ONE_OVER_SAMPLE_RATE;
+
+        // z = zr + zi;
+        double zr = exp(_zr) * cos(_zi);
+        double zi = exp(_zr) * sin(_zi);
+
+        double nr = 0, ni = 0;
+        double dr = 0, di = 0;
+
+        // Numerator complex
+        nr = zr * (-flt.m0 /* + m1 * (g - 1) */ + flt.m2 * flt.g) + (flt.m0 /* + m1 * (g + 1) */ + flt.m2 * flt.g);
+        ni = zi * (-flt.m0 /* + m1 * (g - 1) */ + flt.m2 * flt.g);
+
+        // Denominator complex
+        dr = zr * (flt.g - 1) + (flt.g + 1);
+        di = zi * (flt.g - 1);
+
+        // Numerator / Denominator
+        double norm = dr * dr + di * di;
+        double ddr = (nr * dr + ni * di) / norm;
+        double ddi = (ni * dr - nr * di) / norm;
+
+        return sqrt(ddr * ddr + ddi * ddi);
+    }
+
+// private:
     dataset flt;
 };
 
@@ -433,6 +492,7 @@ static constexpr ParamValue dftSoftBypass      = 0.0;
 static constexpr ParamValue dftLookaheadEnable = 1.0;
 static constexpr ParamValue dftScLfIn          = 1.0;
 static constexpr ParamValue dftScHfIn          = 1.0;
+static constexpr ParamValue dftType            = detectorType::Smooth;
 
 static constexpr ParamValue minScLfFreq  = 20.0;
 static constexpr ParamValue maxScLfFreq  = 18000.0;
@@ -478,6 +538,10 @@ static constexpr ParamValue minMix       = 0.0;
 static constexpr ParamValue maxMix       = 100.0;
 static constexpr ParamValue dftMix       = 100.0;
 
+static constexpr ParamValue minInput     = -12.0;
+static constexpr ParamValue maxInput     = 12.0;
+static constexpr ParamValue dftInput     = 0.0;
+
 static constexpr ParamValue minOutput    = -12.0;
 static constexpr ParamValue maxOutput    = 12.0;
 static constexpr ParamValue dftOutput    = 0.0;
@@ -488,6 +552,7 @@ static const ParameterConverter paramScLfGain (minScLfGain,  maxScLfGain,  Param
 static const ParameterConverter paramScHfType (0,  0,  ParameterConverter::paramType::list, PassShelfFilter::type::FltNum);
 static const ParameterConverter paramScHfFreq (minScHfFreq,  maxScHfFreq,  ParameterConverter::paramType::log);
 static const ParameterConverter paramScHfGain (minScHfGain,  maxScHfGain,  ParameterConverter::paramType::range);
+static const ParameterConverter paramType     (0,  0,  ParameterConverter::paramType::list, detectorType::detectorNum);
 static const ParameterConverter paramAttack   (minAttack,    maxAttack,    ParameterConverter::paramType::log);
 static const ParameterConverter paramRelease  (minRelease,   maxRelease,   ParameterConverter::paramType::log);
 static const ParameterConverter paramThreshold(minThreshold, maxThreshold, ParameterConverter::paramType::range);
@@ -495,6 +560,7 @@ static const ParameterConverter paramRatio    (minRatio,     maxRatio,     Param
 static const ParameterConverter paramKnee     (minKnee,      maxKnee,      ParameterConverter::paramType::range);
 static const ParameterConverter paramMakeup   (minMakeup,    maxMakeup,    ParameterConverter::paramType::range);
 static const ParameterConverter paramMix      (minMix,       maxMix,       ParameterConverter::paramType::range);
+static const ParameterConverter paramInput    (minInput,     maxInput,     ParameterConverter::paramType::range);
 static const ParameterConverter paramOutput   (minOutput,    maxOutput,    ParameterConverter::paramType::range);
 
 static constexpr ParamValue PF_FREQ  = 1500.0;
@@ -729,13 +795,6 @@ public:
     }
 };
 
-
-
-
-
-
-
-
 class delayLine
 {
 public:
@@ -750,8 +809,7 @@ public:
         
         totalSize = maxDelayInSamples;
         
-        for (auto& iter : bufferData)
-            iter.resize(totalSize);
+        bufferData.resize(totalSize);
         
         reset();
     }
@@ -769,65 +827,507 @@ public:
     {
         return delay;
     }
-    
-    void prepare (int numChannels)
-    {
-        if (numChannels <= 0) numChannels = 2;
-
-        bufferData.resize(numChannels);
-        for (auto& iter : bufferData)
-            iter.resize(totalSize);
-
-        writePos.resize (numChannels);
-        readPos.resize  (numChannels);
-
-        reset();
-    }
 
     void reset()
     {
-        for (auto vec : { &writePos, &readPos })
-            std::fill (vec->begin(), vec->end(), 0);
-
-        for (auto& iter : bufferData)
-            std::fill (iter.begin(), iter.end(), 0.0);
+        writePos = 0;
+        readPos = 0;
+        std::fill (bufferData.begin(), bufferData.end(), 0.0);
     }
 
     void pushSample (int channel, double sample)
     {
-        bufferData[channel][writePos[(size_t) channel]] = sample;
+        bufferData[writePos] = sample;
         
-        writePos[(size_t) channel] = (writePos[(size_t) channel] + totalSize - 1) % totalSize;
+        writePos = (writePos + totalSize - 1) % totalSize;
     }
 
     double popSample (int channel)
     {
-        auto index = (readPos[(size_t) channel] + delay) % totalSize;
+        auto index = (readPos + delay) % totalSize;
 
-        double result = bufferData[channel][index];
+        double result = bufferData[index];
 
-        readPos[(size_t) channel] = (readPos[(size_t) channel] + totalSize - 1) % totalSize;
+        readPos = (readPos + totalSize - 1) % totalSize;
 
         return result;
     }
     
     double getSample (int channel, int pos)
     {
-        auto index = (readPos[(size_t) channel] + pos) % totalSize;
+        auto index = (readPos + pos) % totalSize;
 
-        return bufferData[channel][index];
+        return bufferData[index];
     }
-
 
 private:
     //==============================================================================
     static constexpr int minTotalSize = 1;
     
     //==============================================================================
-    std::vector<std::vector<double>> bufferData;
-    std::vector<int> writePos, readPos;
+    std::vector<double> bufferData;
+    int writePos = 0, readPos = 0;
     int delay = 0;
     int totalSize = minTotalSize;
 };
 
+
+
+
+
+
+
+
+
+
+
+
+static constexpr int _fftOrder = 12;
+static constexpr int _fftSize = 1 << _fftOrder;      // 4096 samples
+static constexpr int _numBins = _fftSize / 2 + 1;    // 2049 bins
+
+/*
+   PFFFT : a Pretty Fast FFT.
+
+   This is basically an adaptation of the single precision fftpack
+   (v4) as found on netlib taking advantage of SIMD instruction found
+   on cpus such as intel x86 (SSE1), powerpc (Altivec), and arm (NEON).
+
+   For architectures where no SIMD instruction is available, the code
+   falls back to a scalar version.
+
+   Restrictions:
+
+   - 1D transforms only, with 32-bit single precision.
+
+   - supports only transforms for inputs of length N of the form
+   N=(2^a)*(3^b)*(5^c), a >= 5, b >=0, c >= 0 (32, 48, 64, 96, 128,
+   144, 160, etc are all acceptable lengths). Performance is best for
+   128<=N<=8192.
+
+   - all (float*) pointers in the functions below are expected to
+   have an "simd-compatible" alignment, that is 16 bytes on x86 and
+   powerpc CPUs.
+
+   You can allocate such buffers with the functions
+   pffft_aligned_malloc / pffft_aligned_free (or with stuff like
+   posix_memalign..)
+
+*/
+
+#ifndef PFFFT_H
+#define PFFFT_H
+
+#include <stddef.h> // for size_t
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+    /* opaque struct holding internal stuff (precomputed twiddle factors)
+       this struct can be shared by many threads as it contains only
+       read-only data.
+    */
+    typedef struct PFFFT_Setup PFFFT_Setup;
+
+    /* direction of the transform */
+    typedef enum { PFFFT_FORWARD, PFFFT_BACKWARD } pffft_direction_t;
+
+    /* type of transform */
+    typedef enum { PFFFT_REAL, PFFFT_COMPLEX } pffft_transform_t;
+
+    /*
+      prepare for performing transforms of size N -- the returned
+      PFFFT_Setup structure is read-only so it can safely be shared by
+      multiple concurrent threads.
+    */
+    PFFFT_Setup* pffft_new_setup(int N, pffft_transform_t transform);
+    void pffft_destroy_setup(PFFFT_Setup*);
+
+    /*
+       Perform a Fourier transform , The z-domain data is stored in the
+       most efficient order for transforming it back, or using it for
+       convolution. If you need to have its content sorted in the
+       "usual" way, that is as an array of interleaved complex numbers,
+       either use pffft_transform_ordered , or call pffft_zreorder after
+       the forward fft, and before the backward fft.
+
+       Transforms are not scaled: PFFFT_BACKWARD(PFFFT_FORWARD(x)) = N*x.
+       Typically you will want to scale the backward transform by 1/N.
+
+       The 'work' pointer should point to an area of N (2*N for complex
+       fft) floats, properly aligned. If 'work' is NULL, then stack will
+       be used instead (this is probably the best strategy for small
+       FFTs, say for N < 16384).
+
+       input and output may alias.
+    */
+    void pffft_transform(PFFFT_Setup* setup, const float* input, float* output, float* work, pffft_direction_t direction);
+
+    /*
+       Similar to pffft_transform, but makes sure that the output is
+       ordered as expected (interleaved complex numbers).  This is
+       similar to calling pffft_transform and then pffft_zreorder.
+
+       input and output may alias.
+    */
+    void pffft_transform_ordered(PFFFT_Setup* setup, const float* input, float* output, float* work, pffft_direction_t direction);
+
+    /*
+       call pffft_zreorder(.., PFFFT_FORWARD) after pffft_transform(...,
+       PFFFT_FORWARD) if you want to have the frequency components in
+       the correct "canonical" order, as interleaved complex numbers.
+
+       (for real transforms, both 0-frequency and half frequency
+       components, which are real, are assembled in the first entry as
+       F(0)+i*F(n/2+1). Note that the original fftpack did place
+       F(n/2+1) at the end of the arrays).
+
+       input and output should not alias.
+    */
+    void pffft_zreorder(PFFFT_Setup* setup, const float* input, float* output, pffft_direction_t direction);
+
+    /*
+       Perform a multiplication of the frequency components of dft_a and
+       dft_b and accumulate them into dft_ab. The arrays should have
+       been obtained with pffft_transform(.., PFFFT_FORWARD) and should
+       *not* have been reordered with pffft_zreorder (otherwise just
+       perform the operation yourself as the dft coefs are stored as
+       interleaved complex numbers).
+
+       the operation performed is: dft_ab += (dft_a * fdt_b)*scaling
+
+       The dft_a, dft_b and dft_ab pointers may alias.
+    */
+    void pffft_zconvolve_accumulate(PFFFT_Setup* setup, const float* dft_a, const float* dft_b, float* dft_ab, float scaling);
+
+    /*
+      the float buffers must have the correct alignment (16-byte boundary
+      on intel and powerpc). This function may be used to obtain such
+      correctly aligned buffers.
+    */
+    void* pffft_aligned_malloc(size_t nb_bytes);
+    void  pffft_aligned_free(void*);
+
+    /* return 4 or 1 wether support SSE/Altivec instructions was enable when building pffft.c */
+    int pffft_simd_size(void);
+
+#ifndef PFFFT_SIMD_DISABLE
+    void validate_pffft_simd(); // a small function inside pffft.c that will detect compiler bugs with respect to simd instruction
+#endif
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif // PFFFT_H
+
+/**
+ * C++ Wrapper for pffft, a reasonably fast FFT library.
+ *  The class here reflects closely the Juce FFT class and is a drop
+ *  in replacement.
+ *  See: https://bitbucket.org/jpommier/pffft/src/master/
+ */
+class PFFFT
+{
+public:
+    PFFFT(int order)
+    {
+        size_ = 1 << order;
+        scale_ = 1.f / size_;
+        pSetup_ = pffft_new_setup(size_, PFFFT_REAL);
+    }
+
+    ~PFFFT()
+    {
+        pffft_destroy_setup(pSetup_);
+    }
+
+    void performRealOnlyForwardTransform(float* pBuffer, bool onlyCalculateNonNegativeFrequencies = false)
+    {
+        pffft_transform_ordered(pSetup_, pBuffer, pBuffer, NULL, PFFFT_FORWARD);
+    }
+
+    void performRealOnlyInverseTransform(float* pBuffer)
+    {
+        pffft_transform_ordered(pSetup_, pBuffer, pBuffer, NULL, PFFFT_BACKWARD);
+
+        for (int i = 0; i < size_; ++i)
+        {
+            pBuffer[i] *= scale_;
+        }
+    }
+
+    void performFrequencyOnlyForwardTransform(float* inputOutputData, bool ignoreNegativeFreqs = false) const noexcept
+    {
+        if (size_ == 1) return;
+
+        pffft_transform_ordered(pSetup_, inputOutputData, inputOutputData, NULL, PFFFT_FORWARD);
+
+        auto* out = reinterpret_cast<std::complex<float> *>(inputOutputData);
+
+        const auto limit = ignoreNegativeFreqs ? (size_ / 2) + 1 : size_;
+
+        for (int i = 0; i < limit; ++i)
+        {
+            inputOutputData[i] = std::abs(out[i]);
+        }
+
+        std::fill(inputOutputData + limit, inputOutputData + size_ * 2, 0.f);
+    }
+
+    [[nodiscard]] int getSize() const noexcept { return size_; }
+
+private:
+    int size_;
+    float scale_;
+
+    PFFFT_Setup* pSetup_;
+};
+
+/**
+STFT analysis and resynthesis of audio data.
+
+Each channel should have its own FFTProcessor.
+*/
+class FFTProcessor
+{
+public:
+    FFTProcessor();
+
+    int getLatencyInSamples() const { return fftSize; }
+
+    void reset();
+    float processSample(float sample, bool bypassed);
+    void processBlock(float* data, int numSamples, bool bypassed);
+    void processBlock(double* data, int numSamples, bool bypassed);
+    int getData(float* out) {
+        if (!data_avail)
+            return 0;
+
+        auto* cdata = reinterpret_cast<std::complex<float>*>(&fftData);
+        for (int i = 0; i < numBins; ++i) {
+            float magnitude = std::abs(cdata[i]);
+            out[i] = magnitude;
+        }
+        data_avail = 0;
+        return 1;
+    };
+    static void hannWindow(float* window, int length)
+    {
+        float delta = (M_PI * 2) / float(length);
+        float phase = 0.0f;
+        for (int i = 0; i < length; ++i) {
+            window[i] = 0.5f * (1.0f - std::cos(phase));
+            phase += delta;
+            // phase = i * delta
+        }
+        float pwr = 0.0;
+        for (int i = 0; i < length; ++i) {
+            pwr += window[i];
+        }
+        pwr = 1.0 / pwr;
+        for (int i = 0; i < length; ++i) {
+            window[i] *= pwr;
+        }
+    }
+    static void bkhsWindow(float* window, int length)
+    {
+        double dwindowpos = (M_PI * 2) / length;
+        double pwr = 0.0;
+        for (int i = 0; i < 0.5 * length + 1; i++) {
+            double windowpos = i * dwindowpos;
+            window[i] = (0.35875 - 0.48829 * cos(windowpos) + 0.14128 * cos(2.0 * windowpos) - 0.01168 * cos(3.0 * windowpos));
+            pwr += window[i];
+        }
+        pwr = 0.5 / (pwr * 2 - window[(int)(0.5 * length)]);
+        for (int i = 0; i < 0.5 * length + 1; i++) {
+            window[i] *= pwr;
+        }
+        for (int i = 0; i < 0.5 * length; i++) {
+            window[length - i - 1] = window[i];
+        }
+    }
+    static inline float Ino(float x)
+    {
+        double d = 0, ds = 1, s = 1;
+        do
+        {
+            d += 2;
+            ds *= x * x / (d * d);
+            s += ds;
+        } while (ds > s * 1e-6);
+        return s;
+    };
+
+    static void ksblWindow(float* window, int length)
+    {
+        int Np = (length - 1) / 2;
+        float Alpha;
+        float Inoalpha;
+
+        Alpha = 3.0 * M_PI;
+
+        Inoalpha = Ino(Alpha);
+
+        for (int j = 0; j <= Np; j++)
+        {
+            window[Np + j] = Ino(Alpha * std::sqrt(1.0 - ((float)(j * j) / (float)(Np * Np)))) / Inoalpha;
+        }
+        for (int j = 0; j < Np; j++)
+        {
+            window[j] = window[length - 1 - j];
+        }
+
+        float pwr = 0.0;
+        for (int i = 0; i < length; i++) {
+            pwr += window[i];
+        }
+        pwr = 1.0 / pwr;
+        for (int i = 0; i < length; i++) {
+            window[i] *= pwr * 1.86; // Normalization & Amplitube correction
+        }
+    };
+
+private:
+    void processFrame(bool bypassed);
+    void processSpectrum(float* data, int numBins);
+
+    // The FFT has 2^order points and fftSize/2 + 1 bins.
+    static constexpr int fftOrder = _fftOrder;
+    static constexpr int fftSize = 1 << fftOrder;      // 4096 samples
+    static constexpr int numBins = fftSize / 2 + 1;    // 2049 bins
+    static constexpr int overlap = 4;                  // 75% overlap
+    static constexpr int hopSize = fftSize / overlap;  // //256 samples
+
+    // Gain correction for using Hann window with 75% overlap.
+    static constexpr float windowCorrection = 2.0f / 3.0f;
+
+    PFFFT fft;
+    std::array<float, fftSize> window = { 0.0, };
+
+    // Counts up until the next hop.
+    int count = 0;
+
+    int data_avail = 0;
+
+    // Write position in input FIFO and read position in output FIFO.
+    int pos = 0;
+
+    // Circular buffers for incoming and outgoing audio data.
+    /* SSE and co like 16-bytes aligned pointers */
+    alignas(16) std::array<float, fftSize>  inputFifo;
+    alignas(16) std::array<float, fftSize> outputFifo;
+
+    // The FFT working space. Contains interleaved complex numbers.
+    alignas(16) std::array<float, fftSize * 2>  fftData;
+};
+
 } // namespace yg331
+
+
+// License for PFFFT
+/* Copyright (c) 2013  Julien Pommier ( pommier@modartt.com )
+
+   Based on original fortran 77 code from FFTPACKv4 from NETLIB,
+   authored by Dr Paul Swarztrauber of NCAR, in 1985.
+
+   As confirmed by the NCAR fftpack software curators, the following
+   FFTPACKv5 license applies to FFTPACKv4 sources. My changes are
+   released under the same terms.
+
+   FFTPACK license:
+
+   http://www.cisl.ucar.edu/css/software/fftpack5/ftpk.html
+
+   Copyright (c) 2004 the University Corporation for Atmospheric
+   Research ("UCAR"). All rights reserved. Developed by NCAR's
+   Computational and Information Systems Laboratory, UCAR,
+   www.cisl.ucar.edu.
+
+   Redistribution and use of the Software in source and binary forms,
+   with or without modification, is permitted provided that the
+   following conditions are met:
+
+   - Neither the names of NCAR's Computational and Information Systems
+   Laboratory, the University Corporation for Atmospheric Research,
+   nor the names of its sponsors or contributors may be used to
+   endorse or promote products derived from this Software without
+   specific prior written permission.
+
+   - Redistributions of source code must retain the above copyright
+   notices, this list of conditions, and the disclaimer below.
+
+   - Redistributions in binary form must reproduce the above copyright
+   notice, this list of conditions, and the disclaimer below in the
+   documentation and/or other materials provided with the
+   distribution.
+
+   THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+   EXPRESS OR IMPLIED, INCLUDING, BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+   NONINFRINGEMENT. IN NO EVENT SHALL THE CONTRIBUTORS OR COPYRIGHT
+   HOLDERS BE LIABLE FOR ANY CLAIM, INDIRECT, INCIDENTAL, SPECIAL,
+   EXEMPLARY, OR CONSEQUENTIAL DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+   ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+   CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS WITH THE
+   SOFTWARE.
+*/
+
+// License for PFFFT c++ wrapper
+// https://www.kvraudio.com/forum/viewtopic.php?p=8726913#p8726913
+/*
+    ==============================================================================
+
+    PFFT.h
+    Created: 29 Aug 2022 1:08:12pm
+    Author:  Justin Johnson
+
+    ==============================================================================
+
+    MIT License
+
+    Copyright (c) 2021 Justin Johnson
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+*/
+
+// License for FFTProcessor
+/*  Copyright (c) 2023 Matthijs Hollemans
+ 
+    MIT License
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+*/

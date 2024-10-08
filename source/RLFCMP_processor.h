@@ -60,14 +60,71 @@ protected:
     void processAudio (SampleType** inputs, SampleType** outputs, int32 numChannels, SampleRate getSampleRate, int32 sampleFrames);
     
     inline void sendFloat (Steinberg::Vst::IAttributeList::AttrID aid, double& value);
+
+    // Parameters ===========================================================
+    bool       pBypass     = dftBypass > 0;
+    bool       pSoftBypass = dftSoftBypass > 0;
+    // pZoom,
+    overSample pOS         = overSample_1x;
+    
+    bool       pScLfIn     = dftScLfIn > 0;
+    ParamValue pScLfType   = 0;
+    ParamValue pScLfFreq   = paramScLfFreq. ToNormalized(dftScLfFreq);
+    ParamValue pScLfGain   = paramScLfGain. ToNormalized(dftScLfGain);
+    bool       pScHfIn     = dftScHfIn > 0;
+    ParamValue pScHfType   = 1;
+    ParamValue pScHfFreq   = paramScHfFreq. ToNormalized(dftScHfFreq);
+    ParamValue pScHfGain   = paramScHfGain. ToNormalized(dftScHfGain);
+    bool       pScListen   = false;
+    
+    ParamValue pType       = paramType.     ToNormalized(dftType);
+    ParamValue pAttack     = paramAttack.   ToNormalized(dftAttack);
+    ParamValue pRelease    = paramRelease.  ToNormalized(dftRelease);
+    bool       pLookaheadEnable = true;
+    
+    ParamValue pThreshold  = paramThreshold.ToNormalized(dftThreshold);
+    ParamValue pRatio      = paramRatio.    ToNormalized(dftRatio);
+    ParamValue pKnee       = paramKnee.     ToNormalized(dftKnee);
+    ParamValue pMakeup     = paramMakeup.   ToNormalized(dftMakeup);
+    
+    ParamValue pMix        = paramMix.      ToNormalized(dftMix);
+    ParamValue pInput      = paramInput.    ToNormalized(dftInput);
+    ParamValue pOutput     = paramOutput.   ToNormalized(dftOutput);
+    
+    // Values for GUI ========================================================
+    ParamValue Input_L     = 0.0, Input_R  = 0.0;
+    ParamValue Output_L    = 0.0, Output_R = 0.0;
+    ParamValue Gain_Reduction = 0.0;
+    
+    // Internal plain values =================================================
+    SampleRate projectSR   = 48000.0;
+    SampleRate internalSR  = 192000.0;
+    ParamValue detectorIndicator = 0.0;
+    
+    int32      type        = paramType.ToPlainList(pType);
+    
+    ParamValue atkCoef     = getTau(dftAttack,  projectSR);
+    ParamValue rlsCoef     = getTau(dftRelease, projectSR);
+
+    ParamValue ratio       = paramRatio.ToPlain(pRatio);
+    ParamValue slope       = 1.0 / ratio - 1.0;
+    ParamValue knee        = paramKnee.ToPlain(pKnee);
+    ParamValue kneeHalf    = knee / 2.0;
+    ParamValue threshold   = (ratio == 1.0) ? 0.0 : paramThreshold.ToPlain(pThreshold) * (1.0 + (1.0/(ratio - 1.0))); // in dB
+    ParamValue preGain     = (ratio == 1.0) ? 1.0 : DecibelConverter::ToGain(-paramThreshold.ToPlain(pThreshold));    // in Gain
+    ParamValue makeup      = DecibelConverter::ToGain(paramMakeup.ToPlain(pMakeup));
+    
+    ParamValue mix         = pMix;
+    ParamValue input       = DecibelConverter::ToGain(paramInput. ToPlain(pInput));
+    ParamValue output      = DecibelConverter::ToGain(paramOutput.ToPlain(pOutput));
     
     // alpha = 1 - exp(-1 / (sec * 0.001 * SR)) = tan(1 / (2 * sec * 0.001 * SR))
     inline ParamValue getTau  (ParamValue sec, SampleRate SR) { return exp(-1.0 / (sec * 0.001 * SR)); }
     
     inline void call_after_SR_changed ()
     {
-        atkCoef = getTau(paramAttack. ToPlain(pAttack),  projectSR);
-        rlsCoef = getTau(paramRelease.ToPlain(pRelease), projectSR);
+        atkCoef    = getTau(paramAttack. ToPlain(pAttack),  projectSR);
+        rlsCoef    = getTau(paramRelease.ToPlain(pRelease), projectSR);
         
         for (int32 channel = 0; channel < 2; channel++)
         {
@@ -92,8 +149,10 @@ protected:
     
     inline void call_after_parameter_changed ()
     {
-        atkCoef = getTau(paramAttack. ToPlain(pAttack),  projectSR);
-        rlsCoef = getTau(paramRelease.ToPlain(pRelease), projectSR);
+        type        = paramType.ToPlainList(pType);
+        
+        atkCoef    = getTau(paramAttack. ToPlain(pAttack),  projectSR);
+        rlsCoef    = getTau(paramRelease.ToPlain(pRelease), projectSR);
         
         for (int32 channel = 0; channel < 2; channel++)
         {
@@ -108,56 +167,11 @@ protected:
         threshold = (ratio == 1.0) ? 0.0 : paramThreshold.ToPlain(pThreshold) * (1.0 + (1.0/(ratio - 1.0))); // in dB
         preGain   = (ratio == 1.0) ? 1.0 : DecibelConverter::ToGain(-paramThreshold.ToPlain(pThreshold));    // in Gain
         makeup    = DecibelConverter::ToGain(paramMakeup.ToPlain(pMakeup));
+        
+        mix       = pMix;
+        input     = DecibelConverter::ToGain(paramInput. ToPlain(pInput));
+        output    = DecibelConverter::ToGain(paramOutput.ToPlain(pOutput));
     }
-    
-    // Parameters ===========================================================
-    bool       pBypass     = dftBypass > 0;
-    bool       pSoftBypass = dftSoftBypass > 0;
-    // pZoom,
-    overSample pOS         = overSample_1x;
-    
-    bool       pScLfIn     = dftScLfIn > 0;
-    ParamValue pScLfType   = 0;
-    ParamValue pScLfFreq   = paramScLfFreq. ToNormalized(dftScLfFreq);
-    ParamValue pScLfGain   = paramScLfGain. ToNormalized(dftScLfGain);
-    bool       pScHfIn     = dftScHfIn > 0;
-    ParamValue pScHfType   = 1;
-    ParamValue pScHfFreq   = paramScHfFreq. ToNormalized(dftScHfFreq);
-    ParamValue pScHfGain   = paramScHfGain. ToNormalized(dftScHfGain);
-    bool       pScListen   = false;
-    
-    ParamValue pAttack     = paramAttack.   ToNormalized(dftAttack);
-    ParamValue pRelease    = paramRelease.  ToNormalized(dftRelease);
-    bool       pLookaheadEnable = true;
-    
-    ParamValue pThreshold  = paramThreshold.ToNormalized(dftThreshold);
-    ParamValue pRatio      = paramRatio.    ToNormalized(dftRatio);
-    ParamValue pKnee       = paramKnee.     ToNormalized(dftKnee);
-    ParamValue pMakeup     = paramMakeup.   ToNormalized(dftMakeup);
-    
-    ParamValue pMix        = paramMix.      ToNormalized(dftMix);
-    ParamValue pOutput     = paramOutput.   ToNormalized(dftOutput);
-    
-    // Values for GUI ========================================================
-    ParamValue Input_L     = 0.0, Input_R  = 0.0;
-    ParamValue Output_L    = 0.0, Output_R = 0.0;
-    ParamValue Gain_Reduction = 0.0;
-    
-    // Internal plain values =================================================
-    SampleRate projectSR   = 48000.0;
-    SampleRate internalSR  = 192000.0;
-    ParamValue detectorIndicator = 0.0;
-    
-    ParamValue atkCoef     = getTau(dftAttack,  projectSR);
-    ParamValue rlsCoef     = getTau(dftRelease, projectSR);
-
-    ParamValue ratio       = paramRatio.ToPlain(pRatio);
-    ParamValue slope       = 1.0 / ratio - 1.0;
-    ParamValue knee        = paramKnee.ToPlain(pKnee);
-    ParamValue kneeHalf    = knee / 2.0;
-    ParamValue threshold   = (ratio == 1.0) ? 0.0 : paramThreshold.ToPlain(pThreshold) * (1.0 + (1.0/(ratio - 1.0))); // in dB
-    ParamValue preGain     = (ratio == 1.0) ? 1.0 : DecibelConverter::ToGain(-paramThreshold.ToPlain(pThreshold));    // in Gain
-    ParamValue makeup      = DecibelConverter::ToGain(paramMakeup.ToPlain(pMakeup));
     
     /*
      numCoefs
@@ -199,7 +213,9 @@ protected:
     };
     ParamValue HT_coefs[path_num][HT_stage];
     ParamValue state[2][path_num][io_num][order][HT_stage] = {0, }; // 2-channel, 2-path, 2-state(x, y), 2-order(x1, x2), numCoefs-stages,
-    ParamValue fast_rms[2], slow_rms[2];
+    
+    // Leaky Integrator, naive one-pole filter, EWMA, etc
+    ParamValue detector_state[2];
     
     /*
      BS1770 k-weight filter
@@ -221,8 +237,9 @@ protected:
     int32 lookaheadSize = 0;
     int32 halfTap = lookaheadSize / 2;
     int32 condition = lookaheadSize % 2;
-    delayLine lookAheadDelayLine;
-    delayLine latencyDelayLine;
+    // std::vector<delayLine> lookAheadDelayLine;
+    std::vector<std::deque<double>> lookAheadDelayLine;
+    std::vector<delayLine> latencyDelayLine;
     double LAH_coef[256] = {0.0, };
 };
 

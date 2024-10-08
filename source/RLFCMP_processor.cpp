@@ -105,6 +105,7 @@ tresult PLUGIN_API RLFCMP_Processor::process (Vst::ProcessData& data)
                         case kParamScHfFreq:        pScHfFreq   = value; break;
                         case kParamScHfGain:        pScHfGain   = value; break;
                         case kParamScListen:        pScListen   = (value > 0.5); break;
+                        case kParamType:            pType       = value; break;
                         case kParamAttack:          pAttack     = value; break;
                         case kParamRelease:         pRelease    = value; break;
                         case kParamLookaheadEnable: pLookaheadEnable = (value > 0.5); break;
@@ -113,6 +114,7 @@ tresult PLUGIN_API RLFCMP_Processor::process (Vst::ProcessData& data)
                         case kParamKnee:            pKnee       = value; break;
                         case kParamMakeup:          pMakeup     = value; break;
                         case kParamMix:             pMix        = value; break;
+                        case kParamInput:           pInput      = value; break;
                         case kParamOutput:          pOutput     = value; break;
                         case kParamSoftBypass:      pSoftBypass = (value > 0.5); break;
                         default: break;
@@ -208,35 +210,34 @@ tresult PLUGIN_API RLFCMP_Processor::setupProcessing (Vst::ProcessSetup& newSetu
     // This happens BEFORE setState
     // fprintf (stdout, "setupProcessing\n");
     
-    if (projectSR != newSetup.sampleRate)
+    projectSR = newSetup.sampleRate;
+    
+    if      (projectSR > 96000.0) internalSR = projectSR;
+    else if (projectSR > 48000.0) internalSR = projectSR * 2.0;
+    else                          internalSR = projectSR * 4.0;
+    
+    Vst::SpeakerArrangement arr;
+    getBusArrangement (Steinberg::Vst::BusDirections::kOutput, 0, arr);
+    auto numChannels = Vst::SpeakerArr::getChannelCount (arr);
+    lookaheadSize = std::min((int)(0.5 * 0.001 * newSetup.sampleRate), 256); // fixed lookahead at 0.5ms
+    halfTap = lookaheadSize / 2;
+    condition = lookaheadSize % 2;
+    
+    lookAheadDelayLine.resize(numChannels);
+    for (auto& iter : lookAheadDelayLine)
+        iter.resize(256);
+    
+    latencyDelayLine.resize(numChannels);
+    for (auto& iter : latencyDelayLine)
     {
-        // fprintf (stdout, "projectSR = %f\n", projectSR);
-        // fprintf (stdout, "newSetup.sampleRate = %f\n", newSetup.sampleRate);
-        projectSR = newSetup.sampleRate;
-        
-        if      (projectSR > 96000.0) internalSR = projectSR;
-        else if (projectSR > 48000.0) internalSR = projectSR * 2.0;
-        else                          internalSR = projectSR * 4.0;
-        
-        Vst::SpeakerArrangement arr;
-        getBusArrangement (Steinberg::Vst::BusDirections::kOutput, 0, arr);
-        auto numChannels = Vst::SpeakerArr::getChannelCount (arr);
-        lookaheadSize = std::min((int)(1.0 * 0.001 * newSetup.sampleRate), 256); // fixed lookahead at 0.5ms
-        halfTap = lookaheadSize / 2;
-        condition = lookaheadSize % 2;
-        
-        lookAheadDelayLine.setMaximumDelayInSamples(256); // 384000/2000 as max
-        lookAheadDelayLine.prepare(numChannels);
-        lookAheadDelayLine.setDelay(lookaheadSize);
-        latencyDelayLine.setMaximumDelayInSamples(256); // 384000/2000 as max
-        latencyDelayLine.prepare(numChannels);
-        latencyDelayLine.setDelay(lookaheadSize);
-        
-        Kaiser::calcFilter2(lookaheadSize, 3.0, LAH_coef); // ((alpha * pi)/0.1102) + 8.7, alpha == 3 -> -94.22 dB
-        
-        call_after_SR_changed ();
-        call_after_parameter_changed (); // in case setState does not happen
+        iter.setMaximumDelayInSamples(256); // 384000/2000 as max
+        iter.setDelay(lookaheadSize);
     }
+    
+    Kaiser::calcFilter2(lookaheadSize, 3.0, LAH_coef); // ((alpha * pi)/0.1102) + 8.7, alpha == 3 -> -94.22 dB
+    
+    call_after_SR_changed ();
+    call_after_parameter_changed (); // in case setState does not happen
     
     //--- called before any processing ----
     return AudioEffect::setupProcessing (newSetup);
@@ -352,43 +353,49 @@ void RLFCMP_Processor::processAudio(
 {
     ParamValue GR_Max = 0.0;
     
-    for (int32 channel = 0; channel < numChannels; channel++)
+    // Dunno why, but lets Auto-Vectorization of transform_reduce
+    int lookAhead_local = 0.5 * 0.001 * SampleRate;
+    if (lookAhead_local > 256) lookAhead_local = 256;
+    
+    int32 sample = 0;
+    
+    ParamValue In_Max[2] = {0.0, };
+    ParamValue Out_Max[2] = {0.0, };
+    
+    while (sampleFrames > sample)
     {
-        int32 samples = sampleFrames;
-
-        SampleType* ptrIn  = (SampleType*)inputs[channel];
-        SampleType* ptrOut = (SampleType*)outputs[channel];
+        double sideChain[2] = {0.0, 0.0};
+        double HT_dtct[2] = {0.0, 0.0};
+        double sqared[2]  = {0.0, 0.0};
+        double rectified[2]  = {0.0, 0.0};
         
-        ParamValue In_Max = 0.0;
-        ParamValue Out_Max = 0.0;
-
-        while (--samples >= 0)
+        for (int32 channel = 0; channel < numChannels; channel++)
         {
-            Vst::Sample64 inputSample = *ptrIn;
+            Vst::Sample64 inputSample = inputs[channel][sample];
             
-            if (inputSample > In_Max) In_Max = inputSample;
+            /*
+             input gain
+             optional gain stage for headroom
+             */
+            
+            inputSample *= input;
+            
+            if(In_Max[channel] < inputSample) In_Max[channel] = inputSample;
             
             /*
              Pre Gain
              Acts like auto gain, by appling abs gain of threshold
              */
             inputSample *= preGain;
-
-            /*
-             Start of sidechain
-             */
-            double sideChain = inputSample;
             
             /*
-             BS1770 filter
+             Sidechain Filter - BS1770 filter
              
              It simulates how human ear percives sound.
              It helps compressor to behave more natual (to human ear).
              */
-            // sidechainFilter In/Out is controlled inside of SVF
-            // SVF takes 20% of CPU
-            sideChain = SC_LF[channel].computeSVF(inputSample);
-            sideChain = SC_HF[channel].computeSVF(sideChain);
+            sideChain[channel] = SC_LF[channel].computeSVF(inputSample);
+            sideChain[channel] = SC_HF[channel].computeSVF(sideChain[channel]);
             
             /*
              Hilbert Detector
@@ -407,7 +414,7 @@ void RLFCMP_Processor::processAudio(
              */
             for (int path = 0; path < path_num; path++) // two paths for 0 and +90
             {
-                double nextInput = sideChain; // spits weird values if abs or squaring input
+                double nextInput = sideChain[channel]; // spits weird values if abs or squaring input
                 for (int stage = 0; stage < HT_stage; stage++)
                 {
                     double ret = HT_coefs[path][stage] * (nextInput + state[channel][path][io_y][y2][stage]) - state[channel][path][io_x][x2][stage];
@@ -420,8 +427,37 @@ void RLFCMP_Processor::processAudio(
             }
             double rms_s   = state[channel][path_ref][io_y][y2][HT_stage - 1];
             double rms_c   = state[channel][path_sft][io_y][y1][HT_stage - 1];
-            double HT_dtct = rms_s * rms_s + rms_c * rms_c; // Ideal input level, squared
-            double sqared = sideChain * sideChain; // input squared
+            HT_dtct[channel] = rms_s * rms_s + rms_c * rms_c; // Ideal input level, squared
+            sqared[channel] = sideChain[channel] * sideChain[channel]; // input squared
+            rectified[channel] = std::abs(sideChain[channel]);
+        }
+        
+        double monoSample = 0.0;
+        for (int32 channel = 0; channel < numChannels; channel++)
+            monoSample += HT_dtct[channel];
+        monoSample /= numChannels;
+        for (int32 channel = 0; channel < numChannels; channel++)
+            HT_dtct[channel] = monoSample;
+        
+        monoSample = 0.0;
+        for (int32 channel = 0; channel < numChannels; channel++)
+            monoSample += sqared[channel];
+        monoSample /= numChannels;
+        for (int32 channel = 0; channel < numChannels; channel++)
+            sqared[channel] = monoSample;
+        
+        monoSample = 0.0;
+        for (int32 channel = 0; channel < numChannels; channel++)
+            monoSample += rectified[channel];
+        monoSample /= numChannels;
+        for (int32 channel = 0; channel < numChannels; channel++)
+            rectified[channel] = monoSample;
+        
+        for (int32 channel = 0; channel < numChannels; channel++)
+        {
+            Vst::Sample64 inputSample = inputs[channel][sample];
+            inputSample *= input;
+            inputSample *= preGain;
             
             /*
              Envelope Detector
@@ -453,37 +489,72 @@ void RLFCMP_Processor::processAudio(
             /*
              Question is, typical compressors have effective threshold to be inconsistant by time constants.
              The only compressor that I know works consistantly is Sonnox Oxford Dynamics by Paul Frindle.
+             suggestion is that this is done by two-stage detector, like analog compressors.
+             first stage acts as zero-attack moderate-release, and second stage sets actual attack/release.
              */
-
+            
             double env = 0.0;
             
-            if (true) {
-                double vin = HT_dtct;
-                // slow detector, Hilbert
-                double delta = vin - slow_rms[channel];
-                double pp = smooth::Logistics(delta, k_HT); // (delta > 0) ? 1.0 : 0.0;
-                double nn = 1.0 - pp;
-                double g = (pp * atkCoef + nn * rlsCoef);
-                slow_rms[channel] = g * slow_rms[channel] + (1.0 - g) * vin;
-                env = sqrt(slow_rms[channel]);
+            switch (type) {
+                case detectorType::Bold :
+                {
+                    double vin = rectified[channel];
+                    // fast detector, plain rms
+                    double delta = vin - detector_state[channel];
+                    double pp = smooth::Logistics(delta, k_rms); // (delta > 0) ? 1.0 : 0.0;
+                    double nn = 1.0 - pp;
+                    double g = (pp * atkCoef + nn * rlsCoef);
+                    detector_state[channel] = g * detector_state[channel] + (1.0 - g) * vin;
+                    env = (detector_state[channel]);
+                }
+                    break;
+                    
+                case detectorType::Smooth :
+                {
+                    double vin = sqared[channel];
+                    // fast detector, plain rms
+                    double delta = vin - detector_state[channel];
+                    double pp = smooth::Logistics(delta, k_rms); // (delta > 0) ? 1.0 : 0.0;
+                    double nn = 1.0 - pp;
+                    double g = (pp * sqrt(atkCoef) + nn * (rlsCoef * rlsCoef));
+                    detector_state[channel] = g * detector_state[channel] + (1.0 - g) * vin;
+                    env = sqrt(detector_state[channel]);
+                }
+                    break;
+                    
+                case detectorType::Clean :
+                {
+                    double vin = HT_dtct[channel];
+                    // slow detector, Hilbert
+                    double delta = vin - detector_state[channel];
+                    double pp = smooth::Logistics(delta, k_HT); // (delta > 0) ? 1.0 : 0.0;
+                    double nn = 1.0 - pp;
+                    double g = (pp * sqrt(atkCoef) + nn * (rlsCoef * rlsCoef));
+                    detector_state[channel] = g * detector_state[channel] + (1.0 - g) * vin;
+                    env = sqrt(detector_state[channel]);
+                }
+                    break;
+                    
+                default:
+                {
+                    double vin = HT_dtct[channel];
+                    // slow detector, Hilbert
+                    double delta = vin - detector_state[channel];
+                    double pp = smooth::Logistics(delta, k_HT); // (delta > 0) ? 1.0 : 0.0;
+                    double nn = 1.0 - pp;
+                    double g = (pp * sqrt(atkCoef) + nn * (rlsCoef * rlsCoef));
+                    detector_state[channel] = g * detector_state[channel] + (1.0 - g) * vin;
+                    env = sqrt(detector_state[channel]);
+                }
+                    break;
             }
-            else {
-                double vin = sqared;
-                // fast detector, plain rms
-                double delta = vin - fast_rms[channel];
-                double pp = smooth::Logistics(delta, k_rms); // (delta > 0) ? 1.0 : 0.0;
-                double  nn = 1.0 - pp;
-                double g = (pp * atkCoef + nn * rlsCoef);
-                fast_rms[channel] = g * fast_rms[channel] + (1.0 - g) * vin;
-                env = sqrt(fast_rms[channel]);
-            }
-
+            
             env = DecibelConverter::ToDecibel(env);
             
             double overshoot = env - (threshold);
             
             double gain = 1.0;
-
+            
             if (overshoot <= -kneeHalf)
                 gain = 0.0;
             else if (overshoot > -kneeHalf && overshoot <= kneeHalf)
@@ -491,69 +562,65 @@ void RLFCMP_Processor::processAudio(
             else
                 gain = slope * overshoot;
             
-            // look-ahead with FIR smoothing, Kaiser window
-            // best harmonic rejection at low tap size(0.5ms, 24 taps at 48000)
-            // Pro-C 2 uses A-symmetrical shape. does it help?
-            lookAheadDelayLine.pushSample(channel, gain);
-            
-            double gg = 0.0;
-            // Naive FIR convolution takes 63% of CPU
-            // for (int i = 0; i < lookaheadSize; i++)
-            //    gg += LAH_coef[i] * lookAheadDelayLine.getSample(channel, i);
-            
-            // if lookaheadSize == 24 -> halfTap == 11, 0~11,     12~23
-            // if lookaheadSize == 25 -> halfTap == 12, 0~11, 12, 13~24
-            
-            for (int i = 0; i < halfTap; i++)
-                gg += LAH_coef[i] * (lookAheadDelayLine.getSample(channel, i) + lookAheadDelayLine.getSample(channel, lookaheadSize - i));
-            if (condition) // if lookaheadSize is odd
-                gg += LAH_coef[halfTap] * lookAheadDelayLine.getSample(channel, halfTap);
-            
-            lookAheadDelayLine.popSample(channel);
-            
-            gain = gg;
+            /*
+             Look-ahead with FIR smoothing
+             
+             'proper' way, some say, to implement lookahead.
+             Kaiser window for best harmonic rejection at low tap size(0.5ms, 24 taps at 48000)
+             
+             Also, transform_reduce is literally convolution.
+             It's faster then naive or symmetrical implementation.
+             Manual SIMD might be better, but not bothered and quite happy with this.
+             
+             Pro-C 2 uses A-symmetrical shape. does it help?
+             */
+            lookAheadDelayLine[channel].push_back(gain);
+            gain = std::transform_reduce(lookAheadDelayLine[channel].end() - lookAhead_local, lookAheadDelayLine[channel].end(), LAH_coef, 0.0);
+            lookAheadDelayLine[channel].pop_front();
             
             if (gain < GR_Max) GR_Max = gain;
-            
             gain = DecibelConverter::ToGain(gain);
             
             if (pScListen)
             {
-                inputSample = sideChain;
+                inputSample = sideChain[channel];
                 inputSample /= preGain;
                 gain = 1.0;
                 makeup = 1.0;
             }
             
-            latencyDelayLine.pushSample(channel, inputSample);
-            inputSample = latencyDelayLine.popSample(channel);
+            latencyDelayLine[channel].pushSample(channel, inputSample);
+            inputSample = latencyDelayLine[channel].popSample(channel);
+            
+            double dry = inputSample;
             
             inputSample *= gain;
             
             inputSample *= makeup;
             
+            inputSample = mix * inputSample + (1.0 - mix) * dry;
             
+            inputSample *= output;
             
-            if (inputSample > Out_Max) Out_Max = inputSample;
-
-            *ptrOut = (SampleType)(inputSample);
+            if (Out_Max[channel] < inputSample) Out_Max[channel] = inputSample;
             
-            ptrIn++;
-            ptrOut++;
+            outputs[channel][sample] = (SampleType)(inputSample);
         }
-        
-        if (channel == 0)
-        {
-            Input_L = DecibelConverter::ToDecibel(In_Max);
-            Output_L = DecibelConverter::ToDecibel(Out_Max);
-            Input_R = Input_L;
-            Output_R = Output_L;
-        }
-        if (channel == 1)
-        {
-            Input_R = DecibelConverter::ToDecibel(In_Max);
-            Output_R = DecibelConverter::ToDecibel(Out_Max);
-        }
+        sample++;
+    }
+    if (numChannels == 1)
+    {
+        Input_L = DecibelConverter::ToDecibel(In_Max[0]);
+        Output_L = DecibelConverter::ToDecibel(Out_Max[0]);
+        Input_R = Input_L;
+        Output_R = Output_L;
+    }
+    if (numChannels == 2)
+    {
+        Input_L = DecibelConverter::ToDecibel(In_Max[0]);
+        Output_L = DecibelConverter::ToDecibel(Out_Max[0]);
+        Input_R =  DecibelConverter::ToDecibel(In_Max[1]);
+        Output_R = DecibelConverter::ToDecibel(Out_Max[1]);
     }
     Gain_Reduction = GR_Max;
     return;
@@ -637,4 +704,19 @@ else
  slow_rms[channel].ic1eq += 2.0 * slow_rms[channel].t2;
  
  double slow_env = sqrt(slow_rms[channel].v2);
+ */
+// Naive FIR convolution takes 63% of CPU
+// for (int i = 0; i < lookaheadSize; i++)
+//    gg += LAH_coef[i] * lookAheadDelayLine.getSample(channel, i);
+
+// if lookaheadSize == 24 -> halfTap == 12, 0~11,     12~23, condition == 0
+// if lookaheadSize == 25 -> halfTap == 12, 0~11, 12, 13~24, condition == 1
+
+
+/*
+ double gg = 0.0;
+for (int i = 0; i < halfTap; i++)
+    gg += LAH_coef[i] * (lookAheadDelayLine[channel].getSample(channel, i) + lookAheadDelayLine[channel].getSample(channel, lookaheadSize - i));
+if (condition) // if lookaheadSize is odd
+    gg += LAH_coef[halfTap] * lookAheadDelayLine[channel][halfTap];
  */

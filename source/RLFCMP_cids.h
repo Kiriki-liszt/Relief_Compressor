@@ -47,6 +47,7 @@ enum {
     kParamMakeup,
     
     kParamMix,
+    kParamInput,
     kParamOutput,
     kParamSoftBypass
 };

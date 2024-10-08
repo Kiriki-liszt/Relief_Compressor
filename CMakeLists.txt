@@ -32,6 +32,7 @@ smtg_add_vst3plugin(Relief_Compressor
     source/version.h
     source/RLFCMP_cids.h
     source/RLFCMP_shared.h
+    source/RLFCMP_shared.cpp
     source/RLFCMP_processor.h
     source/RLFCMP_processor.cpp
     source/RLFCMP_controller.h

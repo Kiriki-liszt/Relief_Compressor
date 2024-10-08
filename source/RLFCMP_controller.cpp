@@ -13,13 +13,542 @@
 
 using namespace Steinberg;
 
+namespace VSTGUI
+{
+//------------------------------------------------------------------------
+// EQCurveView
+//------------------------------------------------------------------------
+EQCurveView::EQCurveView(
+    const CRect& size,
+    IControlListener* listener,
+    int32_t tag,
+    CBitmap* background
+)
+    : CControl(size, listener, tag, background)
+{
+    BackColor = kWhiteCColor;
+    LineColor = kBlackCColor;
+    BorderColor = kBlackCColor;
+    FFTLineColor = kBlackCColor;
+    FFTFillColor = kBlackCColor;
+    idleRate = 60;
+    
+    LF_SVF.setRange(yg331::PassShelfFilter::range::Low);
+    HF_SVF.setRange(yg331::PassShelfFilter::range::High);
+    
+    LF_SVF.setFs(48000.0);
+    HF_SVF.setFs(48000.0);
+    
+    setWantsIdle(true);
+}
+EQCurveView::EQCurveView(const EQCurveView& v)
+    : CControl(v)
+    , BackColor(v.BackColor)
+    , LineColor(v.LineColor)
+    , BorderColor(v.BorderColor)
+    , FFTLineColor(v.FFTLineColor)
+    , FFTFillColor(v.FFTFillColor)
+{
+    setWantsIdle(true);
+}
+
+#define safe_bin(bin, x)   std::max(std::min((int)bin  + (int)x, (int)numBins   - 1) , 0)
+#define safe_band(band, x) std::max(std::min((int)band + (int)x, (int)MAX_BANDS - 1) , 0)
+
+void EQCurveView::setFFTArray(float* fftArray, int sampleBlockSize, double sampleRate)
+{
+    // Unit frequency per bin, with sample rate
+    double freqBin_width = sampleRate / fftSize;
+    
+    double SR = sampleRate / (double)sampleBlockSize;
+    double coeff = exp(-1.0 / (100.0 * 0.001 * SR));
+
+    for (int i = 0; i < numBins; ++i)
+    {
+        fft_freq[i] = (i + 0.5) * freqBin_width;
+        fft_RMS[i]  = coeff * fft_RMS[i] + (1.0 - coeff) * fftArray[i] * fftArray[i];
+        fft_linear[i] = std::sqrt(fft_RMS[i]);
+    }
+}
+
+void EQCurveView::draw(CDrawContext* pContext)
+{
+    pContext->setLineWidth(1);
+    pContext->setFillColor(getBackColor());
+    pContext->setFrameColor(getBorderColor());
+    pContext->drawRect(getViewSize(), VSTGUI::kDrawFilledAndStroked);
+
+    double MAX_FREQ = 22000.0;
+    double MIN_FREQ = 10.0;
+    double FREQ_LOG_MAX = log(MAX_FREQ / MIN_FREQ);
+    double ceiling = 0.0;
+    double noise_floor = -72.0;
+    double DB_EQ_RANGE = 15.0;
+
+// Given frequency, return screen x position
+#define freq_to_x(view, freq) \
+(view.getWidth() * log(freq / MIN_FREQ) / FREQ_LOG_MAX)
+
+// Given screen x position, return frequency
+#define x_to_freq(view, x) \
+std::max(std::min(MIN_FREQ * exp(FREQ_LOG_MAX * x / view.getWidth()), MAX_FREQ), MIN_FREQ)
+
+// Given a magnitude, return y screen position as 0..1 with applied tilt
+#define mag_to_01(m, freq) \
+1.0 - (( ((20 * log10(m)) + (4.5 * ((log(freq) / log(2)) - (log(1024) / log(2))))) - ceiling) / (noise_floor - ceiling));
+
+// Given a magnitude (1.0 .... very small number), return y screen position
+#define mag_to_y(view, m) \
+((((20.0 * log10(m)) - ceiling) / (noise_floor - ceiling)) * (view.getHeight()))
+
+// Given decibels, return screen y position
+#define db_to_y(view, db) \
+(((db - ceiling) / (noise_floor - ceiling)) * view.getHeight())
+
+// Given screen y position, return decibels
+#define y_to_db(view, y) \
+ceiling + ((y / view.getHeight()) * (noise_floor - ceiling));
+
+#define dB_to_y_EQ(view, dB) \
+    view.getHeight() * (1.0 - (((dB / DB_EQ_RANGE) / 2) + 0.5));
+
+    auto border = getBorderColor();
+    border.setNormAlpha(0.5);
+
+    {
+        VSTGUI::CRect r(getViewSize());
+        pContext->setFrameColor(border);
+        for (int x = 2; x < 10; x++) {
+            VSTGUI::CCoord Hz_10 = freq_to_x(r, 10.0 * x);
+            const VSTGUI::CPoint _p1(r.left + Hz_10, r.bottom);
+            const VSTGUI::CPoint _p2(r.left + Hz_10, r.top);
+            pContext->drawLine(_p1, _p2);
+        }
+        for (int x = 1; x < 10; x++) {
+            VSTGUI::CCoord Hz_100 = freq_to_x(r, 100.0 * x);
+            const VSTGUI::CPoint _p1(r.left + Hz_100, r.bottom);
+            const VSTGUI::CPoint _p2(r.left + Hz_100, r.top);
+            pContext->drawLine(_p1, _p2);
+        }
+        for (int x = 1; x < 10; x++) {
+            VSTGUI::CCoord Hz_1000 = freq_to_x(r, 1000.0 * x);
+            const VSTGUI::CPoint _p1(r.left + Hz_1000, r.bottom);
+            const VSTGUI::CPoint _p2(r.left + Hz_1000, r.top);
+            pContext->drawLine(_p1, _p2);
+        }
+
+        for (int x = 1; x < 3; x++) {
+            VSTGUI::CCoord Hz_10000 = freq_to_x(r, 10000.0 * x);
+            const VSTGUI::CPoint _p1(r.left + Hz_10000, r.bottom);
+            const VSTGUI::CPoint _p2(r.left + Hz_10000, r.top);
+            pContext->drawLine(_p1, _p2);
+        }
+    }
+
+    {
+        VSTGUI::CRect r(getViewSize());
+        pContext->setFrameColor(border);
+
+        for (int cnt = -(int)DB_EQ_RANGE; cnt < (int)DB_EQ_RANGE; cnt += 5)
+        {
+            VSTGUI::CCoord dB = dB_to_y_EQ(r, cnt);
+            const VSTGUI::CPoint _p1(r.left,  r.bottom - dB);
+            const VSTGUI::CPoint _p2(r.right, r.bottom - dB);
+            pContext->drawLine(_p1, _p2);
+        }
+    }
+
+
+    VSTGUI::CGraphicsPath* FFT_curve = pContext->createGraphicsPath();
+    
+    if (FFT_curve)
+    {
+        VSTGUI::CRect r(getViewSize());
+
+        double y_start = mag_to_01(fft_linear[0], fft_freq[0]);
+        y_start = (std::max)((std::min)(y_start, 1.0), 0.0);
+        y_start *= r.getHeight();
+        FFT_curve->beginSubpath(VSTGUI::CPoint(r.left - 1, r.bottom - y_start));
+        double x_last = 0.0;
+        // RAW
+        for (int bin = 0; bin < numBins; ++bin) {
+            double x = freq_to_x(r, fft_freq[bin]);
+            x = (std::max)((std::min)(x, r.getWidth()), 0.0);
+            double y = mag_to_01(fft_linear[bin], fft_freq[bin]);
+            y = (std::max)((std::min)(y, 1.0), 0.0);
+            y *= r.getHeight();
+            if (x - x_last > 0.1)
+            {
+                x_last = x;
+                FFT_curve->addLine(VSTGUI::CPoint(r.left + x, r.bottom - y));
+            }
+        }
+
+        FFT_curve->addLine(VSTGUI::CPoint(r.right + 1, r.bottom + 1));
+        FFT_curve->addLine(VSTGUI::CPoint(r.left - 1, r.bottom + 1));
+        FFT_curve->closeSubpath();
+
+
+        VSTGUI::CColor ff = getFFTFillColor();
+        ff.setNormAlpha(0.8);
+        pContext->setFrameColor(VSTGUI::kTransparentCColor);
+        pContext->setFillColor(ff);
+        pContext->setDrawMode(VSTGUI::kAntiAliasing);
+        pContext->setLineWidth(0.0);
+        pContext->setLineStyle(VSTGUI::kLineSolid);
+        pContext->drawGraphicsPath(FFT_curve, VSTGUI::CDrawContext::kPathFilled);
+
+
+        pContext->setFrameColor(getFFTLineColor());
+        pContext->setDrawMode(VSTGUI::kAntiAliasing);
+        pContext->setLineWidth(1.0);
+        pContext->setLineStyle(VSTGUI::kLineSolid);
+        pContext->drawGraphicsPath(FFT_curve, VSTGUI::CDrawContext::kPathStroked);
+
+        FFT_curve->forget();
+    }
+
+    VSTGUI::CGraphicsPath* EQ_curve = pContext->createGraphicsPath();
+    if (EQ_curve)
+    {
+        VSTGUI::CRect r(getViewSize());
+
+        VSTGUI::CCoord y_mid = r.bottom - (r.getHeight() / 2.0);
+        EQ_curve->beginSubpath(VSTGUI::CPoint(r.left - 1, y_mid));
+        for (double x = -1; x <= r.getWidth() + 1; x+=0.05)
+        {
+            double tmp = MIN_FREQ * exp(FREQ_LOG_MAX * x / r.getWidth());
+            double freq = (std::max)((std::min)(tmp, MAX_FREQ), MIN_FREQ);
+
+            double dB_LF = 20 * log10(LF_SVF.mag_response(freq));
+            double dB_HF = 20 * log10(HF_SVF.mag_response(freq));
+            double dB = dB_LF + dB_HF;
+
+            double m = 1.0 - (((dB / DB_EQ_RANGE) / 2) + 0.5);
+            double scy = m * r.getHeight();
+
+            EQ_curve->addLine(VSTGUI::CPoint(r.left + x, r.top + scy));
+        }
+        EQ_curve->addLine(VSTGUI::CPoint(r.right + 1, r.bottom + 1));
+        EQ_curve->addLine(VSTGUI::CPoint(r.left - 1, r.bottom + 1));
+        EQ_curve->closeSubpath();
+
+        pContext->setFrameColor(getLineColor());
+        pContext->setDrawMode(VSTGUI::kAntiAliasing);
+        pContext->setLineWidth(1.5);
+        pContext->setLineStyle(VSTGUI::kLineSolid);
+        pContext->drawGraphicsPath(EQ_curve, VSTGUI::CDrawContext::kPathStroked);
+        EQ_curve->forget();
+    }
+
+    // box outline
+    pContext->setLineWidth(1);
+    pContext->setFrameColor(getBorderColor());
+    pContext->drawRect(getViewSize(), VSTGUI::kDrawStroked);
+
+    setDirty(false);
+};
+
+bool EQCurveView::sizeToFit() {
+    if (getDrawBackground())
+    {
+        CRect vs(getViewSize());
+        vs.setWidth(getDrawBackground()->getWidth());
+        vs.setHeight(getDrawBackground()->getHeight());
+        setViewSize(vs);
+        setMouseableArea(vs);
+        return true;
+    }
+    return false;
+};
+
+
+
+
+//------------------------------------------------------------------------
+// MyVuMeter
+//------------------------------------------------------------------------
+MyVuMeter::MyVuMeter(const CRect& size, int32_t _style = kVertical)
+    : CControl(size, nullptr, 0)
+    , style(_style)
+{
+    vuOnColor = kWhiteCColor;
+    vuOffColor = kBlackCColor;
+
+    rectOn(size.left, size.top, size.right, size.bottom);
+    rectOff(size.left, size.top, size.right, size.bottom);
+
+    setWantsIdle(true);
+};
+MyVuMeter::MyVuMeter(const MyVuMeter& vuMeter)
+    : CControl(vuMeter)
+    , style(vuMeter.style)
+    , vuOnColor(vuMeter.vuOnColor)
+    , vuOffColor(vuMeter.vuOffColor)
+    , rectOn(vuMeter.rectOn)
+    , rectOff(vuMeter.rectOff)
+{
+    setWantsIdle(true);
+};
+
+void MyVuMeter::draw(CDrawContext* _pContext) 
+{
+    CRect _rectOn(rectOn);
+    CRect _rectOff(rectOff);
+    CPoint pointOn;
+    CPoint pointOff;
+    CDrawContext* pContext = _pContext;
+
+    bounceValue();
+
+    float newValue = getValueNormalized(); // normalize
+
+    if (style & kHorizontal)
+    {
+        auto tmp = (CCoord)((int32_t)(newValue * getViewSize().getWidth()));
+        // pointOff(tmp, 0); // x, y
+        // pointOn(tmp, 0); // x, y
+
+        // _rectOff.left += tmp;
+        // _rectOn.right = tmp + rectOn.left;
+        _rectOn.right = _rectOn.left + tmp;
+    }
+    else
+    {
+        auto tmp = (CCoord)((int32_t)(newValue * getViewSize().getHeight()));
+        pointOn(0, tmp); // x, y
+
+        //_rectOff.bottom = tmp + rectOff.top;
+        //_rectOn.top += tmp;
+        _rectOn.top = _rectOff.bottom - tmp;
+    }
+
+    pContext->setFillColor(vuOffColor);
+    pContext->drawRect(rectOff, kDrawFilled);
+
+    pContext->setFillColor(vuOnColor);
+    pContext->drawRect(_rectOn, kDrawFilled);
+
+    setDirty(false);
+};
+void MyVuMeter::setViewSize(const CRect& newSize, bool invalid = true) 
+{
+    CControl::setViewSize(newSize, invalid);
+    rectOn = getViewSize();
+    rectOff = getViewSize();
+};
+bool MyVuMeter::sizeToFit() 
+{
+    if (getDrawBackground())
+    {
+        CRect vs(getViewSize());
+        vs.setWidth(getDrawBackground()->getWidth());
+        vs.setHeight(getDrawBackground()->getHeight());
+        setViewSize(vs);
+        setMouseableArea(vs);
+        return true;
+    }
+    return false;
+};
+
+
+
+static const std::string kAttrBackColor    = "back-color";
+static const std::string kAttrBorderColor  = "border-color";
+static const std::string kAttrLineColor    = "line-color";
+static const std::string kAttrFFTLineColor = "FFT-line-color";
+static const std::string kAttrFFTFillColor = "FFT-fill-color";
 
 static const std::string kAttrVuOnColor  = "vu-on-color";
 static const std::string kAttrVuOffColor = "vu-off-color";
 static const std::string kAttrPDclick    = "click-behave";
 static const std::string kAttrPDMin      = "update-min";
 static const std::string kAttrPDMax      = "update-max";
-namespace VSTGUI {
+
+class MyEQCurveViewFactory : public ViewCreatorAdapter
+{
+public:
+    //register this class with the view factory
+    MyEQCurveViewFactory() { UIViewFactory::registerViewCreator(*this); }
+
+    //return an unique name here
+    IdStringPtr getViewName() const override { return "EQ Curve View"; }
+
+    //return the name here from where your custom view inherites.
+    //    Your view automatically supports the attributes from it.
+    IdStringPtr getBaseViewName() const override { return UIViewCreator::kCControl; }
+
+    //create your view here.
+    //    Note you don't need to apply attributes here as
+    //    the apply method will be called with this new view
+    CView* create(const UIAttributes& attributes, const IUIDescription* description) const override
+    {
+        return new EQCurveView(CRect(0, 0, 100, 20), nullptr, -1, nullptr);
+    }
+    bool apply(
+        CView* view,
+        const UIAttributes& attributes,
+        const IUIDescription* description) const override
+    {
+        auto* v = dynamic_cast<EQCurveView*> (view);
+
+        if (!v)
+            return false;
+
+        CColor color;
+        if (UIViewCreator::stringToColor(attributes.getAttributeValue(kAttrBackColor), color, description))
+            v->setBackColor(color);
+        if (UIViewCreator::stringToColor(attributes.getAttributeValue(kAttrBorderColor), color, description))
+            v->setBorderColor(color);
+        if (UIViewCreator::stringToColor(attributes.getAttributeValue(kAttrLineColor), color, description))
+            v->setLineColor(color);
+        if (UIViewCreator::stringToColor(attributes.getAttributeValue(kAttrFFTLineColor), color, description))
+            v->setFFTLineColor(color);
+        if (UIViewCreator::stringToColor(attributes.getAttributeValue(kAttrFFTFillColor), color, description))
+            v->setFFTFillColor(color);
+
+        return true;
+    }
+
+    bool getAttributeNames(StringList& attributeNames) const override
+    {
+        attributeNames.emplace_back(kAttrBackColor);
+        attributeNames.emplace_back(kAttrBorderColor);
+        attributeNames.emplace_back(kAttrLineColor);
+        attributeNames.emplace_back(kAttrFFTLineColor);
+        attributeNames.emplace_back(kAttrFFTFillColor);
+        return true;
+    }
+
+    AttrType getAttributeType(const std::string& attributeName) const override
+    {
+        if (attributeName == kAttrBackColor)
+            return kColorType;
+        if (attributeName == kAttrBorderColor)
+            return kColorType;
+        if (attributeName == kAttrLineColor)
+            return kColorType;
+        if (attributeName == kAttrFFTLineColor)
+            return kColorType;
+        if (attributeName == kAttrFFTFillColor)
+            return kColorType;
+        return kUnknownType;
+    }
+
+    //------------------------------------------------------------------------
+    bool getAttributeValue(
+        CView* view,
+        const string& attributeName,
+        string& stringValue,
+        const IUIDescription* desc) const override
+    {
+        auto* v = dynamic_cast<EQCurveView*> (view);
+
+        if (!v)
+            return false;
+
+        if (attributeName == kAttrBackColor)
+        {
+            UIViewCreator::colorToString(v->getBackColor(), stringValue, desc);
+            return true;
+        }
+        else if (attributeName == kAttrBorderColor)
+        {
+            UIViewCreator::colorToString(v->getBorderColor(), stringValue, desc);
+            return true;
+        }
+        else if (attributeName == kAttrLineColor)
+        {
+            UIViewCreator::colorToString(v->getLineColor(), stringValue, desc);
+            return true;
+        }
+        else if (attributeName == kAttrFFTLineColor)
+        {
+            UIViewCreator::colorToString(v->getFFTLineColor(), stringValue, desc);
+            return true;
+        }
+        else if (attributeName == kAttrFFTFillColor)
+        {
+            UIViewCreator::colorToString(v->getFFTFillColor(), stringValue, desc);
+            return true;
+        }
+
+        return false;
+    }
+};
+
+class MyTransferCurveControlFactory : public ViewCreatorAdapter
+{
+public:
+    MyTransferCurveControlFactory() { UIViewFactory::registerViewCreator(*this); }
+    IdStringPtr getViewName() const override { return "Transfer Curve Viewer"; }
+    IdStringPtr getBaseViewName() const override { return UIViewCreator::kCControl; }
+    CView* create(const UIAttributes& attributes, const IUIDescription* description) const override
+    {
+        CRect size(CPoint(45, 45), CPoint(400, 150));
+        return new TransferCurveView(size);
+    }
+    bool apply(
+        CView* view,
+        const UIAttributes& attributes,
+        const IUIDescription* description) const override
+    {
+        auto* transferCurveView = dynamic_cast<TransferCurveView*> (view);
+
+        if (!transferCurveView)
+            return false;
+
+        CColor color;
+        if (UIViewCreator::stringToColor(attributes.getAttributeValue(kAttrBackColor), color, description))
+            transferCurveView->setBackColor(color);
+        if (UIViewCreator::stringToColor(attributes.getAttributeValue(kAttrLineColor), color, description))
+            transferCurveView->setLineColor(color);
+
+        return true;
+    }
+
+    bool getAttributeNames(StringList& attributeNames) const override
+    {
+        attributeNames.emplace_back(kAttrBackColor);
+        attributeNames.emplace_back(kAttrLineColor);
+        return true;
+    }
+
+    AttrType getAttributeType(const std::string& attributeName) const override
+    {
+        if (attributeName == kAttrBackColor)
+            return kColorType;
+        if (attributeName == kAttrLineColor)
+            return kColorType;
+        return kUnknownType;
+    }
+
+    //------------------------------------------------------------------------
+    bool getAttributeValue(
+        CView* view,
+        const string& attributeName,
+        string& stringValue,
+        const IUIDescription* desc) const override
+    {
+        auto* transferCurveView = dynamic_cast<TransferCurveView*> (view);
+
+        if (!transferCurveView)
+            return false;
+
+        if (attributeName == kAttrBackColor)
+        {
+            UIViewCreator::colorToString(transferCurveView->getBackColor(), stringValue, desc);
+            return true;
+        }
+        else if (attributeName == kAttrLineColor)
+        {
+            UIViewCreator::colorToString(transferCurveView->getLineColor(), stringValue, desc);
+            return true;
+        }
+        return false;
+    }
+};
+
 class MyVUMeterFactory : public ViewCreatorAdapter
 {
 public:
@@ -131,7 +660,9 @@ public:
 };
 
 //create a static instance so that it registers itself with the view factory
-MyVUMeterFactory          __gMyVUMeterFactory;
+MyVUMeterFactory       __gMyVUMeterFactory;
+MyTransferCurveControlFactory __gMyTransferCurveControlFactory;
+MyEQCurveViewFactory   __gMyEQCurveViewFactory;
 } // namespace VSTGUI
 
 
@@ -139,32 +670,13 @@ namespace yg331 {
 //------------------------------------------------------------------------
 // VuMeterController
 //------------------------------------------------------------------------
-VSTGUI::CView* DetectorIndicatorController::verifyView(
-                                            VSTGUI::CView* view,
-                                            const VSTGUI::UIAttributes&   attributes,
-                                            const VSTGUI::IUIDescription* /*description*/
-)
-{
-    if (UIViewSwitchContainer* control = dynamic_cast<UIViewSwitchContainer*>(view); control)
-    {
-        viewSwitch = control;
-        viewSwitch->registerViewListener(this);
-    }
-
-    return view;
-}
-
-void DetectorIndicatorController::viewWillDelete(VSTGUI::CView* view)
-{
-    if (dynamic_cast<UIViewSwitchContainer*>(view) == viewSwitch  && viewSwitch)    { viewSwitch-> unregisterViewListener(this); viewSwitch  = nullptr; }
-}
-
 VSTGUI::CView* VuMeterController::verifyView(CView* view,
                   const UIAttributes&   /*attributes*/,
                   const IUIDescription* /*description*/)
 {
-#define minVU -30.0 // need that margin at bottom
-#define maxVU 0.0
+#define minVU   -30.0 // need that margin at bottom
+#define minGRVU -20.0
+#define maxVU     0.0
     if (MyVuMeter* control = dynamic_cast<MyVuMeter*>(view); control) {
         if (control->getTag() == kInLRMS || control->getTag() == kInLPeak)  {
             vuMeterInL  = control;
@@ -195,11 +707,11 @@ VSTGUI::CView* VuMeterController::verifyView(CView* view,
             vuMeterOutR->registerViewListener(this);
         }
         if (control->getTag() == kGainReduction)   {
-            vuMeterGR   = control;
-            vuMeterGR->setMin(minVU);
+            vuMeterGR = control;
+            vuMeterGR->setMin(minGRVU);
             vuMeterGR->setMax(maxVU);
             vuMeterGR->setDefaultValue(0.0);
-            vuMeterGR->  registerViewListener(this);
+            vuMeterGR->registerViewListener(this);
         }
     }
 
@@ -343,8 +855,8 @@ tresult PLUGIN_API RLFCMP_Controller::initialize (FUnknown* context)
     
     tag          = kParamScLfType;
     auto* ParamScLfType = new Vst::StringListParameter(STR16("SC LF Type"), tag);
-    ParamScLfType->appendString (STR16("LowCut"));
-    ParamScLfType->appendString (STR16("LowShelf"));
+    ParamScLfType->appendString (STR16("CUT"));
+    ParamScLfType->appendString (STR16("SHELF"));
     ParamScLfType->getInfo().defaultNormalizedValue = 0.0;
     parameters.addParameter (ParamScLfType);
     
@@ -378,9 +890,10 @@ tresult PLUGIN_API RLFCMP_Controller::initialize (FUnknown* context)
     
     tag          = kParamScHfType;
     auto* ParamScHfType = new Vst::StringListParameter(STR16("SC HF Type"), tag);
-    ParamScHfType->appendString (STR16("HighCut"));
-    ParamScHfType->appendString (STR16("HighShelf"));
+    ParamScHfType->appendString (STR16("CUT"));
+    ParamScHfType->appendString (STR16("SHELF"));
     ParamScHfType->getInfo().defaultNormalizedValue = 1.0;
+    ParamScHfType->setNormalized(1.0);
     parameters.addParameter (ParamScHfType);
     
     tag          = kParamScHfFreq;
@@ -404,10 +917,19 @@ tresult PLUGIN_API RLFCMP_Controller::initialize (FUnknown* context)
     parameters.addParameter(ParamScHfGain);
     
     tag          = kParamScListen;
-    auto* paramScListen = new Vst::StringListParameter(STR16("SC Listen"), tag);
-    paramScListen->appendString (STR16("OFF"));
-    paramScListen->appendString (STR16("ON"));
-    parameters.addParameter (paramScListen);
+    auto* ParamScListen = new Vst::StringListParameter(STR16("SC Listen"), tag);
+    ParamScListen->appendString (STR16("OFF"));
+    ParamScListen->appendString (STR16("ON"));
+    parameters.addParameter (ParamScListen);
+    
+    tag          = kParamType;
+    auto* ParamType = new Vst::StringListParameter(STR16("Detector Type"), tag);
+    ParamType->appendString (STR16("Bold"));
+    ParamType->appendString (STR16("Smooth"));
+    ParamType->appendString (STR16("Clean"));
+    ParamType->getInfo().defaultNormalizedValue = ParamType->toNormalized(1.0);
+    ParamType->setNormalized(ParamType->toNormalized(1.0));
+    parameters.addParameter (ParamType);
 
     tag          = kParamAttack;
     flags        = Vst::ParameterInfo::kCanAutomate;
@@ -478,6 +1000,16 @@ tresult PLUGIN_API RLFCMP_Controller::initialize (FUnknown* context)
     auto* ParamMix = new LinRangeParameter(STR16("Mix"), tag, STR16("%"), minPlain, maxPlain, defaultPlain, stepCount, flags);
     ParamMix->setPrecision(1);
     parameters.addParameter(ParamMix);
+    
+    tag          = kParamInput;
+    flags        = Vst::ParameterInfo::kCanAutomate;
+    minPlain     = minInput;
+    maxPlain     = maxInput;
+    defaultPlain = dftInput;
+    stepCount    = 0;
+    auto* ParamInput = new LinRangeParameter(STR16("Input"), tag, STR16("dB"), minPlain, maxPlain, defaultPlain, stepCount, flags);
+    ParamInput->setPrecision(1);
+    parameters.addParameter(ParamInput);
     
     tag          = kParamOutput;
     flags        = Vst::ParameterInfo::kCanAutomate;
@@ -631,19 +1163,47 @@ tresult PLUGIN_API RLFCMP_Controller::getState (IBStream* state)
 
 //------------------------------------------------------------------------
 VSTGUI::IController* RLFCMP_Controller::createSubController (VSTGUI::UTF8StringPtr name,
-                                                             const VSTGUI::IUIDescription* /*description*/,
-                                                             VSTGUI::VST3Editor* /*editor*/)
+                                                             const VSTGUI::IUIDescription* description,
+                                                             VSTGUI::VST3Editor* editor)
 {
-    if (VSTGUI::UTF8StringView (name) == "UIDetectorIndicatorController")
-    {
-        auto* controller = new DetectorIndicatorController (this);
-        addDetectorIndicatorController (controller);
-        return controller;
-    }
     if (VSTGUI::UTF8StringView(name) == "VuMeterController")
     {
         auto* controller = new VuMeterController(this);
         addUIVuMeterController(controller);
+        return controller;
+    }
+    if (VSTGUI::UTF8StringView(name) == "eqCurveController")
+    {
+        Steinberg::Vst::Parameter* ScLfInParam = getParameterObject(kParamScLfIn);
+        Steinberg::Vst::Parameter* ScLfTypeParam = getParameterObject(kParamScLfType);
+        Steinberg::Vst::Parameter* ScLfFreqParam = getParameterObject(kParamScLfFreq);
+        Steinberg::Vst::Parameter* ScLfGainParam = getParameterObject(kParamScLfGain);
+        Steinberg::Vst::Parameter* ScHfInParam = getParameterObject(kParamScHfIn);
+        Steinberg::Vst::Parameter* ScHfTypeParam = getParameterObject(kParamScHfType);
+        Steinberg::Vst::Parameter* ScHfFreqParam = getParameterObject(kParamScHfFreq);
+        Steinberg::Vst::Parameter* ScHfGainParam = getParameterObject(kParamScHfGain);
+        auto* controller = new EQCurveViewController(editor,
+                                                     this,
+                                                     ScLfInParam,
+                                                     ScLfTypeParam,
+                                                     ScLfFreqParam,
+                                                     ScLfGainParam,
+                                                     ScHfInParam,
+                                                     ScHfTypeParam,
+                                                     ScHfFreqParam,
+                                                     ScHfGainParam);
+        addUIEQCurveViewController(controller);
+        return controller;
+    }
+    if (VSTGUI::UTF8StringView(name) == "transferCurveController")
+    {
+        Steinberg::Vst::Parameter* ThresholdParam = getParameterObject(kParamThreshold);
+        Steinberg::Vst::Parameter* KneeParam = getParameterObject(kParamKnee);
+        Steinberg::Vst::Parameter* RatioParam = getParameterObject(kParamRatio);
+        Steinberg::Vst::Parameter* MakeupParam = getParameterObject(kParamMakeup);
+        Steinberg::Vst::Parameter* MixParam = getParameterObject(kParamMix);
+        auto* controller = new TransferCurveViewController(editor, this, ThresholdParam, KneeParam, RatioParam, MakeupParam, MixParam);
+        addUITransferCurveViewController(controller);
         return controller;
     }
     return nullptr;
