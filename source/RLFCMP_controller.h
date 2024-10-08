@@ -570,7 +570,7 @@ public:
         if (eqCurveView)
         {
             eqCurveView->unregisterControlListener (this);
-            // eqCurveView->forget ();
+            eqCurveView->forget ();
         }
 
         mainController->removeUIEQCurveViewController(this);
@@ -634,7 +634,7 @@ private:
         {
             eqCurveView = control;
             eqCurveView->registerControlListener(this);
-            // eqCurveView->remember(this);
+            eqCurveView->remember();
             
             update(ParamScLfIn,   kChanged);
             update(ParamScLfType, kChanged);
@@ -705,7 +705,7 @@ public:
         if (transferCurveView)
         {
             transferCurveView->unregisterControlListener (this);
-            // transferCurveView->forget ();
+            transferCurveView->forget ();
         }
 
         mainController->removeUITransferCurveViewController(this);
@@ -757,7 +757,7 @@ private:
         {
             transferCurveView = control;
             transferCurveView->registerControlListener(this);
-            // tranferCurveView->remember(this);
+            transferCurveView->remember();
             //curveView->setValue(0.0);
 
             update(ParamKnee,      kChanged);

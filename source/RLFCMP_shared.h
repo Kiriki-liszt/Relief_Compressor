@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstring>
 #include <algorithm>
+#include <numeric>
 #include <vector>
 #include <deque>
 #include <complex>
