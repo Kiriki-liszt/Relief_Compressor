@@ -60,10 +60,8 @@ tresult PLUGIN_API RLFCMP_Processor::initialize (FUnknown* context)
 tresult PLUGIN_API RLFCMP_Processor::terminate ()
 {
     // Here the Plug-in will be de-instantiated, last possibility to remove some memory!
-    for (auto& iter : latencyDelayLine)
-    {
-        delete iter;
-    }
+    for (auto& iter : lookAheadDelayLine) delete iter;
+    for (auto& iter : latencyDelayLine) delete iter;
     
     //---do not forget to call parent ------
     return AudioEffect::terminate ();
@@ -237,7 +235,8 @@ tresult PLUGIN_API RLFCMP_Processor::setupProcessing (Vst::ProcessSetup& newSetu
     latencyDelayLine.resize(numChannels);
     for (auto& iter : latencyDelayLine)
     {
-        iter = new double[maxLAH];
+        iter = new std::deque<double>;
+        iter->resize(maxLAH);
     }
 
     Kaiser::calcFilter2(lookaheadSize, 3.0, LAH_coef); // ((alpha * pi)/0.1102) + 8.7, alpha == 3 -> -94.22 dB
@@ -423,16 +422,16 @@ void RLFCMP_Processor::processAudio(
                 double nextInput = sideChain[channel]; // spits weird values if abs or squaring input
                 for (int stage = 0; stage < HT_stage; stage++)
                 {
-                    double ret = HT_coefs[path][stage] * (nextInput + state[channel][path][io_y][y2][stage]) - state[channel][path][io_x][x2][stage];
-                    state[channel][path][io_x][x2][stage] = state[channel][path][io_x][x1][stage];
-                    state[channel][path][io_x][x1][stage] = nextInput;
-                    state[channel][path][io_y][y2][stage] = state[channel][path][io_y][y1][stage];
-                    state[channel][path][io_y][y1][stage] = ret;
+                    double ret = HT_coefs[path][stage] * (nextInput + HT_state[channel][path][io_y][y2][stage]) - HT_state[channel][path][io_x][x2][stage];
+                    HT_state[channel][path][io_x][x2][stage] = HT_state[channel][path][io_x][x1][stage];
+                    HT_state[channel][path][io_x][x1][stage] = nextInput;
+                    HT_state[channel][path][io_y][y2][stage] = HT_state[channel][path][io_y][y1][stage];
+                    HT_state[channel][path][io_y][y1][stage] = ret;
                     nextInput = ret;
                 }
             }
-            double rms_s   = state[channel][path_ref][io_y][y2][HT_stage - 1];
-            double rms_c   = state[channel][path_sft][io_y][y1][HT_stage - 1];
+            double rms_s   = HT_state[channel][path_ref][io_y][y2][HT_stage - 1];
+            double rms_c   = HT_state[channel][path_sft][io_y][y1][HT_stage - 1];
             HT_dtct[channel] = rms_s * rms_s + rms_c * rms_c; // Ideal input level, squared
             sqared[channel] = sideChain[channel] * sideChain[channel]; // input squared
             rectified[channel] = std::abs(sideChain[channel]);
@@ -605,12 +604,10 @@ void RLFCMP_Processor::processAudio(
             }
 
             // latencyDelayLine[channel]->pushSample(inputSample);
-            latencyDelayLine[channel][writePos] = inputSample;
-            writePos = (writePos + maxLAH - 1) % maxLAH;
             // inputSample = latencyDelayLine[channel]->getSample(lookAhead_local);
-            int index = (readPos + lookAhead_local) % maxLAH;
-            inputSample = latencyDelayLine[channel][index];
-            readPos = (readPos + maxLAH - 1) % maxLAH;
+            latencyDelayLine[channel]->push_back(inputSample);
+            inputSample = *(latencyDelayLine[channel]->end() - lookAhead_local);
+            latencyDelayLine[channel]->pop_front();
 
             double dry = inputSample;
             
@@ -645,6 +642,60 @@ void RLFCMP_Processor::processAudio(
     Gain_Reduction = GR_Max;
     return;
 }
+
+
+void RLFCMP_Processor::call_after_SR_changed ()
+{
+    atkCoef    = getTau(paramAttack. ToPlain(pAttack),  projectSR);
+    rlsCoef    = getTau(paramRelease.ToPlain(pRelease), projectSR);
+    
+    for (int32 channel = 0; channel < 2; channel++)
+    {
+        SC_LF[channel].setSVF(pScLfIn, paramScLfFreq.ToPlain(pScLfFreq), paramScLfGain.ToPlain(pScLfGain), paramScLfType.ToPlainList(pScLfType), projectSR);
+        SC_HF[channel].setSVF(pScHfIn, paramScHfFreq.ToPlain(pScHfType), paramScHfGain.ToPlain(pScHfGain), paramScHfType.ToPlainList(pScHfType), projectSR);
+    }
+    
+    ParamValue transition = 2.0 * bw / projectSR; // 90 deg phase difference band is from 20 Hz to Nyquist - 20 Hz. The transition bandwidth is twice 20 Hz.
+
+    ParamValue coefs[HT_order];
+    
+    hiir::PolyphaseIir2Designer::compute_coefs_spec_order_tbw (coefs, HT_order, transition);
+    
+    // Phase reference path c coefficients
+    for (int i = 1, j = 0; i < HT_order; i += 2)
+        HT_coefs[path_ref][j++] = coefs[i];
+
+    // +90 deg path c coefficients
+    for (int i = 0, j = 0; i < HT_order; i += 2)
+        HT_coefs[path_sft][j++] = coefs[i];
+}
+
+void RLFCMP_Processor::call_after_parameter_changed ()
+{
+    type        = paramType.ToPlainList(pType);
+    
+    atkCoef    = getTau(paramAttack. ToPlain(pAttack),  projectSR);
+    rlsCoef    = getTau(paramRelease.ToPlain(pRelease), projectSR);
+    
+    for (int32 channel = 0; channel < 2; channel++)
+    {
+        SC_LF[channel].setSVF(pScLfIn, paramScLfFreq.ToPlain(pScLfFreq), paramScLfGain.ToPlain(pScLfGain), paramScLfType.ToPlainList(pScLfType), projectSR);
+        SC_HF[channel].setSVF(pScHfIn, paramScHfFreq.ToPlain(pScHfFreq), paramScHfGain.ToPlain(pScHfGain), paramScHfType.ToPlainList(pScHfType), projectSR);
+    }
+
+    ratio     = paramRatio.ToPlain(pRatio);
+    slope     = 1.0 / ratio - 1.0;
+    knee      = paramKnee.ToPlain(pKnee);
+    kneeHalf  = knee / 2.0;
+    threshold = (ratio == 1.0) ? 0.0 : paramThreshold.ToPlain(pThreshold) * (1.0 + (1.0/(ratio - 1.0))); // in dB
+    preGain   = (ratio == 1.0) ? 1.0 : DecibelConverter::ToGain(-paramThreshold.ToPlain(pThreshold));    // in Gain
+    makeup    = DecibelConverter::ToGain(paramMakeup.ToPlain(pMakeup));
+    
+    mix       = pMix;
+    input     = DecibelConverter::ToGain(paramInput. ToPlain(pInput));
+    output    = DecibelConverter::ToGain(paramOutput.ToPlain(pOutput));
+}
+
 //------------------------------------------------------------------------
 } // namespace yg331
 
