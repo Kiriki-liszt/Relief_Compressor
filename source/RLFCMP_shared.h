@@ -803,6 +803,10 @@ public:
     {
         setMaximumDelayInSamples (maxDelayInSamples);
     }
+    ~delayLine ()
+    {
+        if(bufferData) delete bufferData;
+    }
     
     void setMaximumDelayInSamples (int maxDelayInSamples)
     {
@@ -810,7 +814,9 @@ public:
         
         totalSize = maxDelayInSamples;
         
-        bufferData.resize(totalSize);
+        // bufferData.resize(totalSize);
+        if(bufferData) delete bufferData;
+        bufferData = new double[totalSize];
         
         reset();
     }
@@ -833,17 +839,17 @@ public:
     {
         writePos = 0;
         readPos = 0;
-        std::fill (bufferData.begin(), bufferData.end(), 0.0);
+        // std::fill (bufferData.begin(), bufferData.end(), 0.0);
     }
 
-    void pushSample (int channel, double sample)
+    void pushSample (double sample)
     {
         bufferData[writePos] = sample;
         
         writePos = (writePos + totalSize - 1) % totalSize;
     }
 
-    double popSample (int channel)
+    double popSample ()
     {
         auto index = (readPos + delay) % totalSize;
 
@@ -854,7 +860,7 @@ public:
         return result;
     }
     
-    double getSample (int channel, int pos)
+    double getSample (int pos)
     {
         auto index = (readPos + pos) % totalSize;
 
@@ -866,7 +872,8 @@ private:
     static constexpr int minTotalSize = 1;
     
     //==============================================================================
-    std::vector<double> bufferData;
+    // std::vector<double> bufferData;
+    double* bufferData = nullptr;
     int writePos = 0, readPos = 0;
     int delay = 0;
     int totalSize = minTotalSize;
