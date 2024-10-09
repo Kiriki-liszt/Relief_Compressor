@@ -239,8 +239,13 @@ protected:
     int32 condition = lookaheadSize % 2;
     // std::vector<delayLine> lookAheadDelayLine;
     std::vector<std::deque<double>*> lookAheadDelayLine;
-    std::vector<delayLine*> latencyDelayLine;
-    double LAH_coef[256] = {0.0, };
+    // std::vector<delayLine*> latencyDelayLine;
+    
+    static SMTG_CONSTEXPR int maxLAH = 256;
+    int writePos = 0, readPos = 0;
+    std::vector<double*> latencyDelayLine;
+    
+    double LAH_coef[maxLAH] = {0.0, };
 };
 
 //------------------------------------------------------------------------

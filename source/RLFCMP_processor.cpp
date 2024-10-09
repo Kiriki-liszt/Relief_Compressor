@@ -60,9 +60,10 @@ tresult PLUGIN_API RLFCMP_Processor::initialize (FUnknown* context)
 tresult PLUGIN_API RLFCMP_Processor::terminate ()
 {
     // Here the Plug-in will be de-instantiated, last possibility to remove some memory!
-
     for (auto& iter : latencyDelayLine)
+    {
         delete iter;
+    }
     
     //---do not forget to call parent ------
     return AudioEffect::terminate ();
@@ -222,7 +223,7 @@ tresult PLUGIN_API RLFCMP_Processor::setupProcessing (Vst::ProcessSetup& newSetu
     Vst::SpeakerArrangement arr;
     getBusArrangement (Steinberg::Vst::BusDirections::kOutput, 0, arr);
     auto numChannels = Vst::SpeakerArr::getChannelCount (arr);
-    lookaheadSize = std::min((int)(0.5 * 0.001 * newSetup.sampleRate), 256); // fixed lookahead at 0.5ms
+    lookaheadSize = std::min((int)(0.5 * 0.001 * newSetup.sampleRate), maxLAH); // fixed lookahead at 0.5ms
     halfTap = lookaheadSize / 2;
     condition = lookaheadSize % 2;
     
@@ -230,15 +231,15 @@ tresult PLUGIN_API RLFCMP_Processor::setupProcessing (Vst::ProcessSetup& newSetu
     for (auto& iter : lookAheadDelayLine)
     {
         iter = new std::deque<double>;
-        iter->resize(256);
+        iter->resize(maxLAH);
     }
     
     latencyDelayLine.resize(numChannels);
     for (auto& iter : latencyDelayLine)
     {
-        iter = new delayLine(256);
+        iter = new double[maxLAH];
     }
-    
+
     Kaiser::calcFilter2(lookaheadSize, 3.0, LAH_coef); // ((alpha * pi)/0.1102) + 8.7, alpha == 3 -> -94.22 dB
     
     call_after_SR_changed ();
@@ -360,7 +361,7 @@ void RLFCMP_Processor::processAudio(
     
     // Dunno why, but lets Auto-Vectorization of transform_reduce
     int lookAhead_local = 0.5 * 0.001 * SampleRate;
-    if (lookAhead_local > 256) lookAhead_local = 256;
+    if (lookAhead_local > maxLAH) lookAhead_local = maxLAH;
     
     int32 sample = 0;
     
@@ -603,9 +604,14 @@ void RLFCMP_Processor::processAudio(
                 makeup = 1.0;
             }
 
-            latencyDelayLine[channel]->pushSample(inputSample);
-            inputSample = latencyDelayLine[channel]->getSample(lookAhead_local);
-            
+            // latencyDelayLine[channel]->pushSample(inputSample);
+            latencyDelayLine[channel][writePos] = inputSample;
+            writePos = (writePos + maxLAH - 1) % maxLAH;
+            // inputSample = latencyDelayLine[channel]->getSample(lookAhead_local);
+            int index = (readPos + lookAhead_local) % maxLAH;
+            inputSample = latencyDelayLine[channel][index];
+            readPos = (readPos + maxLAH - 1) % maxLAH;
+
             double dry = inputSample;
             
             inputSample *= gain;
