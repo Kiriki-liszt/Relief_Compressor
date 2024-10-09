@@ -56,6 +56,12 @@ public:
     
     //------------------------------------------------------------------------
 protected:
+    // Dunno why, but these are happy only if these are defines here
+    // Otherwise, the capacity of vector gets ridiculusly large
+    std::vector<std::deque<ParamValue>*> lookAheadDelayLine;
+    std::vector<std::deque<ParamValue>*> latencyDelayLine;
+    
+    // Internal functions ===========================================================
     template <typename SampleType>
     void processAudio (SampleType** inputs, SampleType** outputs, int32 numChannels, SampleRate getSampleRate, int32 sampleFrames);
     
@@ -102,12 +108,7 @@ protected:
     int32 lookaheadSize = 0;
     int32 halfTap = lookaheadSize / 2;
     int32 condition = lookaheadSize % 2;
-    // std::vector<delayLine> lookAheadDelayLine;
-    std::vector<std::deque<ParamValue>*> lookAheadDelayLine;
-    
-    // int32 writePos = 0, readPos = 0;
-    std::vector<std::deque<ParamValue>*> latencyDelayLine;
-    
+
     ParamValue LAH_coef[maxLAH] = {0.0, };
 
     // Parameters ===========================================================
