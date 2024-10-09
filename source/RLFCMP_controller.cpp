@@ -215,7 +215,8 @@ ceiling + ((y / view.getHeight()) * (noise_floor - ceiling));
 
         VSTGUI::CCoord y_mid = r.bottom - (r.getHeight() / 2.0);
         EQ_curve->beginSubpath(VSTGUI::CPoint(r.left - 1, y_mid));
-        for (double x = -1; x <= r.getWidth() + 1; x+=0.05)
+        static constexpr double inc = 0.05;
+        for (double x = -inc; x <= r.getWidth() + inc; x += inc)
         {
             double tmp = MIN_FREQ * exp(FREQ_LOG_MAX * x / r.getWidth());
             double freq = (std::max)((std::min)(tmp, MAX_FREQ), MIN_FREQ);
@@ -674,7 +675,7 @@ VSTGUI::CView* VuMeterController::verifyView(CView* view,
                   const UIAttributes&   /*attributes*/,
                   const IUIDescription* /*description*/)
 {
-#define minVU   -30.0 // need that margin at bottom
+#define minVU   -60.0 // need that margin at bottom
 #define minGRVU -20.0
 #define maxVU     0.0
     if (MyVuMeter* control = dynamic_cast<MyVuMeter*>(view); control) {
@@ -690,7 +691,7 @@ VSTGUI::CView* VuMeterController::verifyView(CView* view,
             vuMeterInR->setMin(minVU);
             vuMeterInR->setMax(maxVU);
             vuMeterInR->setDefaultValue(minVU);
-            vuMeterInR-> registerViewListener(this);
+            vuMeterInR->registerViewListener(this);
         }
         if (control->getTag() == kOutLRMS || control->getTag() == kOutLPeak) {
             vuMeterOutL = control;
@@ -710,7 +711,7 @@ VSTGUI::CView* VuMeterController::verifyView(CView* view,
             vuMeterGR = control;
             vuMeterGR->setMin(minGRVU);
             vuMeterGR->setMax(maxVU);
-            vuMeterGR->setDefaultValue(0.0);
+            vuMeterGR->setDefaultValue(maxVU);
             vuMeterGR->registerViewListener(this);
         }
     }
@@ -950,6 +951,14 @@ tresult PLUGIN_API RLFCMP_Controller::initialize (FUnknown* context)
     auto* ParamRelease = new LogRangeParameter(STR16("Release"), tag, STR16("ms"), minPlain, maxPlain, defaultPlain, stepCount, flags);
     ParamRelease->setPrecision(1);
     parameters.addParameter(ParamRelease);
+    
+    tag          = kParamLookaheadEnable;
+    auto* ParamLookaheadEnable = new Vst::StringListParameter(STR16("Lookahead Enable"), tag);
+    ParamLookaheadEnable->appendString (STR16("OFF"));
+    ParamLookaheadEnable->appendString (STR16("ON"));
+    ParamLookaheadEnable->getInfo().defaultNormalizedValue = ParamLookaheadEnable->toNormalized(1.0);
+    ParamLookaheadEnable->setNormalized(ParamLookaheadEnable->toNormalized(1.0));
+    parameters.addParameter (ParamLookaheadEnable);
 
     tag          = kParamThreshold;
     flags        = Vst::ParameterInfo::kCanAutomate;

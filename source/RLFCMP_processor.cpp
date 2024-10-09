@@ -230,8 +230,7 @@ tresult PLUGIN_API RLFCMP_Processor::setupProcessing (Vst::ProcessSetup& newSetu
     latencyDelayLine.resize(numChannels);
     for (auto& iter : latencyDelayLine)
     {
-        iter.setMaximumDelayInSamples(256); // 384000/2000 as max
-        iter.setDelay(lookaheadSize);
+        iter.resize(256);
     }
     
     Kaiser::calcFilter2(lookaheadSize, 3.0, LAH_coef); // ((alpha * pi)/0.1102) + 8.7, alpha == 3 -> -94.22 dB
@@ -574,9 +573,18 @@ void RLFCMP_Processor::processAudio(
              
              Pro-C 2 uses A-symmetrical shape. does it help?
              */
-            lookAheadDelayLine[channel].push_back(gain);
-            gain = std::transform_reduce(lookAheadDelayLine[channel].end() - lookAhead_local, lookAheadDelayLine[channel].end(), LAH_coef, 0.0);
-            lookAheadDelayLine[channel].pop_front();
+            if (pLookaheadEnable)
+            {
+                lookAheadDelayLine[channel].push_back(gain);
+                gain = std::transform_reduce(lookAheadDelayLine[channel].end() - lookAhead_local, lookAheadDelayLine[channel].end(), LAH_coef, 0.0);
+                lookAheadDelayLine[channel].pop_front();
+            }
+            else
+            {
+                lookAheadDelayLine[channel].push_back(gain);
+                gain = *(lookAheadDelayLine[channel].end() - lookAhead_local);
+                lookAheadDelayLine[channel].pop_front();
+            }
             
             if (gain < GR_Max) GR_Max = gain;
             gain = DecibelConverter::ToGain(gain);
@@ -588,9 +596,10 @@ void RLFCMP_Processor::processAudio(
                 gain = 1.0;
                 makeup = 1.0;
             }
-            
-            latencyDelayLine[channel].pushSample(channel, inputSample);
-            inputSample = latencyDelayLine[channel].popSample(channel);
+
+            latencyDelayLine[channel].push_back(inputSample);
+            inputSample = *(latencyDelayLine[channel].end() - lookAhead_local);
+            latencyDelayLine[channel].pop_front();
             
             double dry = inputSample;
             
