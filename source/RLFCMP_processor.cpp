@@ -60,6 +60,11 @@ tresult PLUGIN_API RLFCMP_Processor::initialize (FUnknown* context)
 tresult PLUGIN_API RLFCMP_Processor::terminate ()
 {
     // Here the Plug-in will be de-instantiated, last possibility to remove some memory!
+    for (auto& iter : lookAheadDelayLine)
+        delete iter;
+    
+    for (auto& iter : latencyDelayLine)
+        delete iter;
     
     //---do not forget to call parent ------
     return AudioEffect::terminate ();
@@ -225,12 +230,16 @@ tresult PLUGIN_API RLFCMP_Processor::setupProcessing (Vst::ProcessSetup& newSetu
     
     lookAheadDelayLine.resize(numChannels);
     for (auto& iter : lookAheadDelayLine)
-        iter.resize(256);
+    {
+        iter = new std::deque<double>;
+        iter->resize(256);
+    }
     
     latencyDelayLine.resize(numChannels);
     for (auto& iter : latencyDelayLine)
     {
-        iter.resize(256);
+        iter = new std::deque<double>;
+        iter->resize(256);
     }
     
     Kaiser::calcFilter2(lookaheadSize, 3.0, LAH_coef); // ((alpha * pi)/0.1102) + 8.7, alpha == 3 -> -94.22 dB
@@ -575,15 +584,15 @@ void RLFCMP_Processor::processAudio(
              */
             if (pLookaheadEnable)
             {
-                lookAheadDelayLine[channel].push_back(gain);
-                gain = std::transform_reduce(lookAheadDelayLine[channel].end() - lookAhead_local, lookAheadDelayLine[channel].end(), LAH_coef, 0.0);
-                lookAheadDelayLine[channel].pop_front();
+                lookAheadDelayLine[channel]->push_back(gain);
+                gain = std::transform_reduce(lookAheadDelayLine[channel]->end() - lookAhead_local, lookAheadDelayLine[channel]->end(), LAH_coef, 0.0);
+                lookAheadDelayLine[channel]->pop_front();
             }
             else
             {
-                lookAheadDelayLine[channel].push_back(gain);
-                gain = *(lookAheadDelayLine[channel].end() - lookAhead_local);
-                lookAheadDelayLine[channel].pop_front();
+                lookAheadDelayLine[channel]->push_back(gain);
+                gain = *(lookAheadDelayLine[channel]->end() - lookAhead_local);
+                lookAheadDelayLine[channel]->pop_front();
             }
             
             if (gain < GR_Max) GR_Max = gain;
@@ -597,9 +606,9 @@ void RLFCMP_Processor::processAudio(
                 makeup = 1.0;
             }
 
-            latencyDelayLine[channel].push_back(inputSample);
-            inputSample = *(latencyDelayLine[channel].end() - lookAhead_local);
-            latencyDelayLine[channel].pop_front();
+            latencyDelayLine[channel]->push_back(inputSample);
+            inputSample = *(latencyDelayLine[channel]->end() - lookAhead_local);
+            latencyDelayLine[channel]->pop_front();
             
             double dry = inputSample;
             

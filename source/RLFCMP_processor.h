@@ -238,8 +238,8 @@ protected:
     int32 halfTap = lookaheadSize / 2;
     int32 condition = lookaheadSize % 2;
     // std::vector<delayLine> lookAheadDelayLine;
-    std::vector<std::deque<double>> lookAheadDelayLine;
-    std::vector<std::deque<double>> latencyDelayLine;
+    std::vector<std::deque<double>*> lookAheadDelayLine;
+    std::vector<std::deque<double>*> latencyDelayLine;
     double LAH_coef[256] = {0.0, };
 };
 
