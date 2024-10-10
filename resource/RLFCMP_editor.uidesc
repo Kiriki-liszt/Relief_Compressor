@@ -233,7 +233,7 @@
 				"Size": "5, 5"
 			},
 			"UITemplateController": {
-				"SelectedTemplate": "Compressor_Control"
+				"SelectedTemplate": "view"
 			},
 			"UIEditController": {
 				"EditViewScale": "1",
@@ -249,7 +249,7 @@
 			},
 			"UIAttributesController": {},
 			"UIViewCreatorDataSource": {
-				"SelectedRow": "10"
+				"SelectedRow": "28"
 			},
 			"UITagsDataSource": {
 				"SelectedRow": "-1"
@@ -704,11 +704,121 @@
 									"class": "CViewContainer",
 									"mouse-enabled": "true",
 									"opacity": "1",
+									"origin": "10, 30",
+									"size": "150, 20",
+									"sub-controller": "VuMeterController",
+									"transparent": "false",
+									"uidesc-label": "VU Input Peak",
+									"wants-focus": "false"
+								},
+								"children": {
+									"My Vu Meter": {
+										"attributes": {
+											"class": "My Vu Meter",
+											"control-tag": "kInLPeak",
+											"default-value": "-60",
+											"max-value": "0",
+											"min-value": "-60",
+											"mouse-enabled": "true",
+											"opacity": "1",
+											"orientation": "horizontal",
+											"origin": "0, 0",
+											"size": "150, 10",
+											"transparent": "false",
+											"vu-off-color": "~ BlackCColor",
+											"vu-on-color": "Pantone P 179-1 C Color | #F2F1F0",
+											"wants-focus": "false",
+											"wheel-inc-value": "0.1"
+										}
+									},
+									"My Vu Meter": {
+										"attributes": {
+											"class": "My Vu Meter",
+											"control-tag": "kInRPeak",
+											"default-value": "-60",
+											"max-value": "0",
+											"min-value": "-60",
+											"mouse-enabled": "true",
+											"opacity": "1",
+											"orientation": "horizontal",
+											"origin": "0, 10",
+											"size": "150, 10",
+											"transparent": "false",
+											"vu-off-color": "~ BlackCColor",
+											"vu-on-color": "Pantone P 179-1 C Color | #F2F1F0",
+											"wants-focus": "false",
+											"wheel-inc-value": "0.1"
+										}
+									}
+								}
+							},
+							"CViewContainer": {
+								"attributes": {
+									"background-color": "~ TransparentCColor",
+									"background-color-draw-style": "filled and stroked",
+									"class": "CViewContainer",
+									"mouse-enabled": "true",
+									"opacity": "1",
+									"origin": "10, 30",
+									"size": "150, 20",
+									"sub-controller": "VuMeterController",
+									"transparent": "false",
+									"uidesc-label": "VU Input RMS",
+									"wants-focus": "false"
+								},
+								"children": {
+									"My Vu Meter": {
+										"attributes": {
+											"class": "My Vu Meter",
+											"control-tag": "kInLRMS",
+											"default-value": "-60",
+											"max-value": "0",
+											"min-value": "-60",
+											"mouse-enabled": "true",
+											"opacity": "1",
+											"orientation": "horizontal",
+											"origin": "0, 0",
+											"size": "150, 10",
+											"transparent": "false",
+											"vu-off-color": "~ TransparentCColor",
+											"vu-on-color": "5455 Dark",
+											"wants-focus": "false",
+											"wheel-inc-value": "0.1"
+										}
+									},
+									"My Vu Meter": {
+										"attributes": {
+											"class": "My Vu Meter",
+											"control-tag": "kInRRMS",
+											"default-value": "-60",
+											"max-value": "0",
+											"min-value": "-60",
+											"mouse-enabled": "true",
+											"opacity": "1",
+											"orientation": "horizontal",
+											"origin": "0, 10",
+											"size": "150, 10",
+											"transparent": "false",
+											"vu-off-color": "~ TransparentCColor",
+											"vu-on-color": "5455 Dark",
+											"wants-focus": "false",
+											"wheel-inc-value": "0.1"
+										}
+									}
+								}
+							},
+							"CViewContainer": {
+								"attributes": {
+									"background-color": "~ TransparentCColor",
+									"background-color-draw-style": "filled and stroked",
+									"class": "CViewContainer",
+									"mouse-enabled": "true",
+									"opacity": "1",
 									"origin": "170, 60",
 									"size": "20, 150",
 									"sub-controller": "VuMeterController",
 									"transparent": "false",
-									"uidesc-label": "VU Output",
+									"uidesc-label": "VU Output Peak",
 									"wants-focus": "false"
 								},
 								"children": {
@@ -759,29 +869,29 @@
 									"class": "CViewContainer",
 									"mouse-enabled": "true",
 									"opacity": "1",
-									"origin": "10, 30",
-									"size": "150, 20",
+									"origin": "170, 60",
+									"size": "20, 150",
 									"sub-controller": "VuMeterController",
 									"transparent": "false",
-									"uidesc-label": "VU Input",
+									"uidesc-label": "VU Output RMS",
 									"wants-focus": "false"
 								},
 								"children": {
 									"My Vu Meter": {
 										"attributes": {
 											"class": "My Vu Meter",
-											"control-tag": "kInLPeak",
+											"control-tag": "kOutLRMS",
 											"default-value": "-60",
 											"max-value": "0",
 											"min-value": "-60",
 											"mouse-enabled": "true",
 											"opacity": "1",
-											"orientation": "horizontal",
+											"orientation": "vertical",
 											"origin": "0, 0",
-											"size": "150, 10",
+											"size": "10, 150",
 											"transparent": "false",
-											"vu-off-color": "~ BlackCColor",
-											"vu-on-color": "Pantone P 179-1 C Color | #F2F1F0",
+											"vu-off-color": "~ TransparentCColor",
+											"vu-on-color": "5455 Dark",
 											"wants-focus": "false",
 											"wheel-inc-value": "0.1"
 										}
@@ -789,18 +899,18 @@
 									"My Vu Meter": {
 										"attributes": {
 											"class": "My Vu Meter",
-											"control-tag": "kInRPeak",
+											"control-tag": "kOutRRMS",
 											"default-value": "-60",
 											"max-value": "0",
 											"min-value": "-60",
 											"mouse-enabled": "true",
 											"opacity": "1",
-											"orientation": "horizontal",
-											"origin": "0, 10",
-											"size": "150, 10",
+											"orientation": "vertical",
+											"origin": "10, 0",
+											"size": "10, 150",
 											"transparent": "false",
-											"vu-off-color": "~ BlackCColor",
-											"vu-on-color": "Pantone P 179-1 C Color | #F2F1F0",
+											"vu-off-color": "~ TransparentCColor",
+											"vu-on-color": "5455 Dark",
 											"wants-focus": "false",
 											"wheel-inc-value": "0.1"
 										}
@@ -1221,7 +1331,7 @@
 									"min-value": "0",
 									"mouse-enabled": "true",
 									"opacity": "1",
-									"origin": "40, 160",
+									"origin": "40, 165",
 									"round-rect-radius": "0",
 									"secure-style": "false",
 									"shadow-color": "~ RedCColor",
@@ -1356,7 +1466,7 @@
 							"mouse-enabled": "true",
 							"opacity": "1",
 							"origin": "5, 240",
-							"size": "305, 55",
+							"size": "235, 55",
 							"transparent": "false",
 							"uidesc-label": "Logos",
 							"wants-focus": "false"
@@ -1380,7 +1490,7 @@
 									"origin": "0, 0",
 									"round-rect-radius": "3",
 									"shadow-color": "~ RedCColor",
-									"size": "305, 55",
+									"size": "235, 55",
 									"style-3D-in": "false",
 									"style-3D-out": "false",
 									"style-no-draw": "false",
@@ -1433,6 +1543,128 @@
 									"transparent": "false",
 									"value-precision": "2",
 									"wants-focus": "false",
+									"wheel-inc-value": "0.1"
+								}
+							}
+						}
+					},
+					"CViewContainer": {
+						"attributes": {
+							"background-color": "~ TransparentCColor",
+							"background-color-draw-style": "filled and stroked",
+							"class": "CViewContainer",
+							"mouse-enabled": "true",
+							"opacity": "1",
+							"origin": "245, 240",
+							"size": "65, 55",
+							"transparent": "false",
+							"uidesc-label": "Options",
+							"wants-focus": "false"
+						},
+						"children": {
+							"CTextLabel": {
+								"attributes": {
+									"back-color": "Pantone 5455 UP Color | #cbdad9",
+									"background-offset": "0, 0",
+									"class": "CTextLabel",
+									"default-value": "0.5",
+									"font": "~ NormalFont",
+									"font-antialias": "true",
+									"font-color": "Pantone P Process Black C Color | #231f20",
+									"frame-color": "Pantone P Process Black C Color | #231f20",
+									"frame-width": "1",
+									"max-value": "1",
+									"min-value": "0",
+									"mouse-enabled": "true",
+									"opacity": "0",
+									"origin": "0, 0",
+									"round-rect-radius": "3",
+									"shadow-color": "~ RedCColor",
+									"size": "65, 55",
+									"style-3D-in": "false",
+									"style-3D-out": "false",
+									"style-no-draw": "false",
+									"style-no-frame": "false",
+									"style-no-text": "false",
+									"style-round-rect": "true",
+									"style-shadow-text": "false",
+									"text-alignment": "center",
+									"text-inset": "0, 0",
+									"text-rotation": "0",
+									"text-shadow-offset": "1, 1",
+									"transparent": "false",
+									"uidesc-label": "Background",
+									"value-precision": "2",
+									"wants-focus": "false",
+									"wheel-inc-value": "0.1"
+								}
+							},
+							"CTextButton": {
+								"attributes": {
+									"class": "CTextButton",
+									"control-tag": "Bypass",
+									"default-value": "0",
+									"font": "Arial 12 Bold",
+									"frame-color": "Pantone P Process Black C Color | #231f20",
+									"frame-color-highlighted": "Pantone P Process Black C Color | #231f20",
+									"frame-width": "1",
+									"gradient": "Pantone 129 C Color | #F3D03E (at center)",
+									"gradient-highlighted": "Default TextButton Gradient Highlighted",
+									"icon-position": "left",
+									"icon-text-margin": "0",
+									"kick-style": "false",
+									"max-value": "1",
+									"min-value": "0",
+									"mouse-enabled": "true",
+									"opacity": "1",
+									"origin": "0, 0",
+									"round-radius": "3",
+									"size": "65, 25",
+									"text-alignment": "center",
+									"text-color": "Pantone P Process Black C Color | #231f20",
+									"text-color-highlighted": "Pantone P Process Black C Color | #231f20",
+									"title": "IN",
+									"transparent": "false",
+									"wants-focus": "true",
+									"wheel-inc-value": "0.1"
+								}
+							},
+							"COptionMenu": {
+								"attributes": {
+									"back-color": "Pantone 5455 UP Color | #cbdad9",
+									"background-offset": "0, 0",
+									"class": "COptionMenu",
+									"control-tag": "Zoom",
+									"default-value": "0",
+									"font": "Arial 12 Bold",
+									"font-antialias": "true",
+									"font-color": "Pantone P Process Black C Color | #231f20",
+									"frame-color": "Pantone P Process Black C Color | #231f20",
+									"frame-width": "1",
+									"max-value": "6",
+									"menu-check-style": "false",
+									"menu-popup-style": "false",
+									"min-value": "0",
+									"mouse-enabled": "true",
+									"opacity": "1",
+									"origin": "0, 30",
+									"round-rect-radius": "3",
+									"shadow-color": "~ TransparentCColor",
+									"size": "65, 25",
+									"style-3D-in": "false",
+									"style-3D-out": "false",
+									"style-no-draw": "false",
+									"style-no-frame": "false",
+									"style-no-text": "false",
+									"style-round-rect": "true",
+									"style-shadow-text": "false",
+									"text-alignment": "center",
+									"text-inset": "0, 0",
+									"text-rotation": "0",
+									"text-shadow-offset": "1, 1",
+									"transparent": "false",
+									"value-precision": "2",
+									"wants-focus": "true",
 									"wheel-inc-value": "0.1"
 								}
 							}
@@ -1822,7 +2054,7 @@
 											"background-offset": "0, 0",
 											"class": "CTextEdit",
 											"control-tag": "Threshold",
-											"default-value": "0.5",
+											"default-value": "0.625",
 											"font": "Arial 12 Bold",
 											"font-antialias": "true",
 											"font-color": "Pantone P 179-1 C Color | #F2F1F0",
@@ -1850,7 +2082,7 @@
 											"text-inset": "0, 0",
 											"text-rotation": "0",
 											"text-shadow-offset": "1, 1",
-											"title": "-10.0 dB",
+											"title": "-20.0 dB",
 											"transparent": "false",
 											"value-precision": "2",
 											"wants-focus": "false",
@@ -1969,7 +2201,7 @@
 											"corona-line-cap-butt": "false",
 											"corona-outline": "false",
 											"corona-outline-width-add": "10",
-											"default-value": "0.5",
+											"default-value": "0.625",
 											"handle-color": "Pantone 10399 C Color | #363432",
 											"handle-line-width": "3",
 											"handle-shadow-color": "~ TransparentCColor",
@@ -2165,7 +2397,7 @@
 											"text-inset": "0, 0",
 											"text-rotation": "0",
 											"text-shadow-offset": "1, 1",
-											"title": "2.1",
+											"title": "4.0",
 											"transparent": "false",
 											"value-precision": "2",
 											"wants-focus": "false",
@@ -2480,7 +2712,7 @@
 											"text-inset": "0, 0",
 											"text-rotation": "0",
 											"text-shadow-offset": "1, 1",
-											"title": "0.0 dB",
+											"title": "5.0 dB",
 											"transparent": "false",
 											"value-precision": "2",
 											"wants-focus": "false",
@@ -3579,7 +3811,7 @@
 											"background-offset": "0, 0",
 											"class": "CTextEdit",
 											"control-tag": "Attack",
-											"default-value": "0.561066",
+											"default-value": "0.606222",
 											"font": "Arial 12 Bold",
 											"font-antialias": "true",
 											"font-color": "Pantone P 179-1 C Color | #F2F1F0",
@@ -3726,7 +3958,7 @@
 											"corona-line-cap-butt": "false",
 											"corona-outline": "false",
 											"corona-outline-width-add": "10",
-											"default-value": "0.561066",
+											"default-value": "0.606222",
 											"handle-color": "Pantone 10399 C Color | #363432",
 											"handle-line-width": "3",
 											"handle-shadow-color": "~ TransparentCColor",
@@ -3894,7 +4126,7 @@
 											"background-offset": "0, 0",
 											"class": "CTextEdit",
 											"control-tag": "Release",
-											"default-value": "0.349485",
+											"default-value": "0.451545",
 											"font": "Arial 12 Bold",
 											"font-antialias": "true",
 											"font-color": "Pantone P 179-1 C Color | #F2F1F0",
@@ -4041,7 +4273,7 @@
 											"corona-line-cap-butt": "false",
 											"corona-outline": "false",
 											"corona-outline-width-add": "10",
-											"default-value": "0.349485",
+											"default-value": "0.451545",
 											"handle-color": "Pantone 10399 C Color | #363432",
 											"handle-line-width": "3",
 											"handle-shadow-color": "~ TransparentCColor",
@@ -4845,7 +5077,7 @@
 											"font-color": "Pantone P 179-1 C Color | #F2F1F0",
 											"frame-color": "~ TransparentCColor",
 											"frame-width": "0",
-											"max-value": "2",
+											"max-value": "1",
 											"menu-check-style": "false",
 											"menu-popup-style": "false",
 											"min-value": "0",

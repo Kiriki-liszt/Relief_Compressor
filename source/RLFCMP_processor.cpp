@@ -186,12 +186,15 @@ tresult PLUGIN_API RLFCMP_Processor::process (Vst::ProcessData& data)
 
     // can we draw attack-release curve in GUI...?
     //---send a message
-    sendFloat("Input L", Input_L);
-    sendFloat("Input R", Input_R);
-    sendFloat("Output L", Output_L);
-    sendFloat("Output R", Output_R);
-    sendFloat("Gain Reduction", Gain_Reduction);
-    sendFloat("detectorIndicator", detectorIndicator);
+    sendFloat(msgInputPeakL, fInputVuPeak[0]);
+    sendFloat(msgInputPeakR, fInputVuPeak[1]);
+    sendFloat(msgInputRMSL, fInputVuRMS[0]);
+    sendFloat(msgInputRMSR, fInputVuRMS[1]);
+    sendFloat(msgOutputPeakL, fOutputVuPeak[0]);
+    sendFloat(msgOutputPeakR, fOutputVuPeak[1]);
+    sendFloat(msgOutputRMSL, fOutputVuRMS[0]);
+    sendFloat(msgOutputRMSR, fOutputVuRMS[1]);
+    sendFloat(msgGainReduction, fGainReduction);
 
     return kResultOk;
 }
@@ -356,6 +359,7 @@ void RLFCMP_Processor::processAudio(
     int32 sampleFrames
 )
 {
+    double invNumChannels = 1.0 / numChannels;
     ParamValue GR_Max = 0.0;
     
     // Dunno why, but lets Auto-Vectorization of transform_reduce
@@ -364,8 +368,10 @@ void RLFCMP_Processor::processAudio(
     
     int32 sample = 0;
     
-    ParamValue In_Max[2] = {0.0, };
-    ParamValue Out_Max[2] = {0.0, };
+    ParamValue maxInputPeak[2] = {0.0, };
+    ParamValue maxInputRMS[2] = {0.0, };
+    ParamValue maxOutputPeak[2] = {0.0, };
+    ParamValue maxOutputRMS[2] = {0.0, };
     
     while (sampleFrames > sample)
     {
@@ -382,16 +388,7 @@ void RLFCMP_Processor::processAudio(
              input gain
              optional gain stage for headroom
              */
-            
             inputSample *= input;
-            
-            if(In_Max[channel] < inputSample) In_Max[channel] = inputSample;
-            
-            /*
-             Pre Gain
-             Acts like auto gain, by appling abs gain of threshold
-             */
-            inputSample *= preGain;
             
             /*
              Sidechain Filter - BS1770 filter
@@ -437,32 +434,31 @@ void RLFCMP_Processor::processAudio(
             rectified[channel] = std::abs(sideChain[channel]);
         }
         
-        double monoSample = 0.0;
+        double boldMonoSample   = 0.0;
+        double smoothMonoSample = 0.0;
+        double cleanMonoSample  = 0.0;
         for (int32 channel = 0; channel < numChannels; channel++)
-            monoSample += HT_dtct[channel];
-        monoSample /= numChannels;
+        {
+            boldMonoSample   += invNumChannels * rectified[channel];
+            smoothMonoSample += invNumChannels * sqared[channel];
+            cleanMonoSample  += invNumChannels * HT_dtct[channel];
+        }
         for (int32 channel = 0; channel < numChannels; channel++)
-            HT_dtct[channel] = monoSample;
-        
-        monoSample = 0.0;
-        for (int32 channel = 0; channel < numChannels; channel++)
-            monoSample += sqared[channel];
-        monoSample /= numChannels;
-        for (int32 channel = 0; channel < numChannels; channel++)
-            sqared[channel] = monoSample;
-        
-        monoSample = 0.0;
-        for (int32 channel = 0; channel < numChannels; channel++)
-            monoSample += rectified[channel];
-        monoSample /= numChannels;
-        for (int32 channel = 0; channel < numChannels; channel++)
-            rectified[channel] = monoSample;
+        {
+            rectified[channel] = boldMonoSample;
+            sqared[channel]    = smoothMonoSample;
+            HT_dtct[channel]   = cleanMonoSample;
+        }
         
         for (int32 channel = 0; channel < numChannels; channel++)
         {
             Vst::Sample64 inputSample = inputs[channel][sample];
             inputSample *= input;
-            inputSample *= preGain;
+            
+            double inputPeak = VuInputPeak[channel].processSample(inputSample);
+            double inputRMS = VuInputRMS[channel].processSample(inputSample);
+            if(maxInputPeak[channel] < inputPeak) maxInputPeak[channel] = inputPeak;
+            if(maxInputRMS[channel]  < inputRMS ) maxInputRMS[channel]  = inputRMS;
             
             /*
              Envelope Detector
@@ -598,7 +594,6 @@ void RLFCMP_Processor::processAudio(
             if (pScListen)
             {
                 inputSample = sideChain[channel];
-                inputSample /= preGain;
                 gain = 1.0;
                 makeup = 1.0;
             }
@@ -619,7 +614,10 @@ void RLFCMP_Processor::processAudio(
             
             inputSample *= output;
             
-            if (Out_Max[channel] < inputSample) Out_Max[channel] = inputSample;
+            double outputPeak = VuOutputPeak[channel].processSample(inputSample);
+            double outputRMS  = VuOutputRMS[channel].processSample(inputSample);
+            if(maxOutputPeak[channel] < outputPeak) maxOutputPeak[channel] = outputPeak;
+            if(maxOutputRMS[channel]  < outputRMS ) maxOutputRMS[channel]  = outputRMS;
             
             outputs[channel][sample] = (SampleType)(inputSample);
         }
@@ -627,19 +625,27 @@ void RLFCMP_Processor::processAudio(
     }
     if (numChannels == 1)
     {
-        Input_L = DecibelConverter::ToDecibel(In_Max[0]);
-        Output_L = DecibelConverter::ToDecibel(Out_Max[0]);
-        Input_R = Input_L;
-        Output_R = Output_L;
+        fInputVuPeak[0] = DecibelConverter::ToDecibel(maxInputPeak[0]);
+        fInputVuRMS[0] = DecibelConverter::ToDecibel(maxInputRMS[0]);
+        fOutputVuPeak[0] = DecibelConverter::ToDecibel(maxOutputPeak[0]);
+        fOutputVuRMS[0] = DecibelConverter::ToDecibel(maxOutputRMS[0]);
+        fInputVuPeak[1] = fInputVuPeak[0];
+        fInputVuRMS[1] = fInputVuRMS[0];
+        fOutputVuPeak[1] = fOutputVuPeak[0];
+        fOutputVuRMS[1] = fOutputVuRMS[0];
     }
-    if (numChannels == 2)
+    else
     {
-        Input_L = DecibelConverter::ToDecibel(In_Max[0]);
-        Output_L = DecibelConverter::ToDecibel(Out_Max[0]);
-        Input_R =  DecibelConverter::ToDecibel(In_Max[1]);
-        Output_R = DecibelConverter::ToDecibel(Out_Max[1]);
+        fInputVuPeak[0] = DecibelConverter::ToDecibel(maxInputPeak[0]);
+        fInputVuRMS[0] = DecibelConverter::ToDecibel(maxInputRMS[0]);
+        fOutputVuPeak[0] = DecibelConverter::ToDecibel(maxOutputPeak[0]);
+        fOutputVuRMS[0] = DecibelConverter::ToDecibel(maxOutputRMS[0]);
+        fInputVuPeak[1] = DecibelConverter::ToDecibel(maxInputPeak[1]);
+        fInputVuRMS[1] = DecibelConverter::ToDecibel(maxInputRMS[1]);
+        fOutputVuPeak[1] = DecibelConverter::ToDecibel(maxOutputPeak[1]);
+        fOutputVuRMS[1] = DecibelConverter::ToDecibel(maxOutputRMS[1]);
     }
-    Gain_Reduction = GR_Max;
+    fGainReduction = GR_Max;
     return;
 }
 
@@ -668,6 +674,15 @@ void RLFCMP_Processor::call_after_SR_changed ()
     // +90 deg path c coefficients
     for (int i = 0, j = 0; i < HT_order; i += 2)
         HT_coefs[path_sft][j++] = coefs[i];
+    
+    for (int32 channel = 0; channel < 2; channel++)
+    {
+        VuInputRMS[channel].prepare(projectSR);
+        VuOutputRMS[channel].prepare(projectSR);
+        VuInputPeak[channel].prepare(projectSR);
+        VuOutputPeak[channel].prepare(projectSR);
+    }
+    
 }
 
 void RLFCMP_Processor::call_after_parameter_changed ()
@@ -687,8 +702,7 @@ void RLFCMP_Processor::call_after_parameter_changed ()
     slope     = 1.0 / ratio - 1.0;
     knee      = paramKnee.ToPlain(pKnee);
     kneeHalf  = knee / 2.0;
-    threshold = (ratio == 1.0) ? 0.0 : paramThreshold.ToPlain(pThreshold) * (1.0 + (1.0/(ratio - 1.0))); // in dB
-    preGain   = (ratio == 1.0) ? 1.0 : DecibelConverter::ToGain(-paramThreshold.ToPlain(pThreshold));    // in Gain
+    threshold = paramThreshold.ToPlain(pThreshold);
     makeup    = DecibelConverter::ToGain(paramMakeup.ToPlain(pMakeup));
     
     mix       = pMix;

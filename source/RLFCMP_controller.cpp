@@ -33,8 +33,8 @@ EQCurveView::EQCurveView(
     FFTFillColor = kBlackCColor;
     idleRate = 60;
     
-    LF_SVF.setRange(yg331::PassShelfFilter::range::Low);
-    HF_SVF.setRange(yg331::PassShelfFilter::range::High);
+    LF_SVF.setRange(yg331::PassShelfFilter::rLow);
+    HF_SVF.setRange(yg331::PassShelfFilter::rHigh);
     
     LF_SVF.setFs(48000.0);
     HF_SVF.setFs(48000.0);
@@ -263,8 +263,107 @@ bool EQCurveView::sizeToFit() {
     return false;
 };
 
+//------------------------------------------------------------------------
+//  Transfer Curve View
+//------------------------------------------------------------------------
+void TransferCurveView::draw(CDrawContext* _pContext)
+{
+    CDrawContext* pContext = _pContext;
+
+    // draw border
+    pContext->setLineWidth(1);
+    pContext->setFillColor(BackColor);
+    pContext->setFrameColor(VSTGUI::CColor(223, 233, 233, 255)); // black borders
+    pContext->drawRect(getViewSize(), VSTGUI::kDrawFilledAndStroked);
+
+    // draw db lines
+    
+    //double FREQ_LOG_MAX = log(MAX_FREQ / MIN_FREQ);
+    //double DB_EQ_RANGE = 15.0;
+    {
+        VSTGUI::CRect r(getViewSize());
+        auto width = r.getWidth();
+        auto height = r.getHeight();
+
+        pContext->setFrameColor(VSTGUI::CColor(255, 255, 255, 55));
+        for (int x = MIN_dB; x < MAX_dB; x += 10) {
+            VSTGUI::CCoord ver = width * -x * Inv_DB_R;
+            const VSTGUI::CPoint _p1(r.left + ver, r.bottom);
+            const VSTGUI::CPoint _p2(r.left + ver, r.top);
+            pContext->drawLine(_p1, _p2);
+        }
+
+        for (int x = MIN_dB; x < MAX_dB; x += 10) {
+            VSTGUI::CCoord ver = height * -x * Inv_DB_R;
+            const VSTGUI::CPoint _p1(r.left, r.bottom - ver);
+            const VSTGUI::CPoint _p2(r.right, r.bottom - ver);
+            pContext->drawLine(_p1, _p2);
+        }
+    }
 
 
+    // draw curve
+    VSTGUI::CGraphicsPath* path = pContext->createGraphicsPath();
+    if (path)
+    {
+        VSTGUI::CRect r(getViewSize());
+        // VSTGUI::CCoord inset = 30;
+        // r.inset(inset, 0);
+
+        double width = r.getWidth();
+        double inv_width = 1.0 / r.getWidth();
+        double height = r.getHeight();
+
+        path->beginSubpath(VSTGUI::CPoint(r.left - 1, r.bottom));
+        for (int x = -1; x <= width + 1; x++)
+        {
+            double x_dB = -DB_Range * (1.0 - x * inv_width); // -60 -> 0
+
+            double overshoot = x_dB - threshold;
+            
+            double gain = 0.0;
+            if (overshoot <= -kneeHalf)
+                gain = 0.0;
+            else if (overshoot > -kneeHalf && overshoot <= kneeHalf)
+                gain = 0.5 * slope * ((overshoot + kneeHalf) * (overshoot + kneeHalf)) / knee;
+            else
+                gain = slope * overshoot;
+
+            double y_dB = x_dB + gain + makeup;
+            y_dB = mix * y_dB + (1.0 - mix) * x_dB; // -60 ~ 0
+            
+            double y = -y_dB * Inv_DB_R; // 1 ~ 0
+            y = (1.0 - y) * height;
+
+            path->addLine(VSTGUI::CPoint(r.left + x, r.bottom - y));
+        }
+        path->addLine(VSTGUI::CPoint(r.right + 1, r.bottom + 1));
+        path->addLine(VSTGUI::CPoint(r.left - 1, r.bottom + 1));
+        path->closeSubpath();
+        
+        pContext->setFrameColor(LineColor);
+        pContext->setDrawMode(VSTGUI::kAntiAliasing);
+        pContext->setLineWidth(1.5);
+        pContext->setLineStyle(VSTGUI::kLineSolid);
+        pContext->drawGraphicsPath(path, VSTGUI::CDrawContext::kPathStroked);
+        path->forget();
+    }
+
+    setDirty(false);
+};
+bool TransferCurveView::sizeToFit()
+{
+    if (getDrawBackground())
+    {
+        CRect vs(getViewSize());
+        vs.setWidth(getDrawBackground()->getWidth());
+        vs.setHeight(getDrawBackground()->getHeight());
+        setViewSize(vs);
+        setMouseableArea(vs);
+        return true;
+    }
+    return false;
+};
 
 //------------------------------------------------------------------------
 // MyVuMeter
@@ -366,6 +465,9 @@ static const std::string kAttrPDclick    = "click-behave";
 static const std::string kAttrPDMin      = "update-min";
 static const std::string kAttrPDMax      = "update-max";
 
+//------------------------------------------------------------------------
+// EQ Curve View Factory
+//------------------------------------------------------------------------
 class MyEQCurveViewFactory : public ViewCreatorAdapter
 {
 public:
@@ -478,6 +580,9 @@ public:
     }
 };
 
+//------------------------------------------------------------------------
+// Trandfer Curve View Factory
+//------------------------------------------------------------------------
 class MyTransferCurveControlFactory : public ViewCreatorAdapter
 {
 public:
@@ -550,6 +655,108 @@ public:
     }
 };
 
+//------------------------------------------------------------------------
+// Click Reset Parameter Display View Factory
+//------------------------------------------------------------------------
+class MyClickResetParamDisplayFactory : public ViewCreatorAdapter
+{
+public:
+    MyClickResetParamDisplayFactory() { UIViewFactory::registerViewCreator(*this); }
+    IdStringPtr getViewName() const override { return "Click to Reset Parameter Display"; }
+    IdStringPtr getBaseViewName() const override { return UIViewCreator::kCParamDisplay; }
+    CView* create(const UIAttributes& attributes, const IUIDescription* description) const override
+    {
+        CRect ss(0, 0, 100, 20);
+        return new ClickResetParamDisplay(ss, nullptr, 0);
+    }
+    bool apply(
+        CView* view,
+        const UIAttributes& attributes,
+        const IUIDescription* description) const SMTG_OVERRIDE
+    {
+        auto* vv = dynamic_cast<ClickResetParamDisplay*> (view);
+
+        if (!vv)
+            return false;
+
+        const auto* attr = attributes.getAttributeValue(kAttrPDclick);
+        if (attr)
+            vv->setStyle_(*attr == kAttrPDMin ? ClickResetParamDisplay::kUpdateMin : ClickResetParamDisplay::kUpdateMax);
+
+        return true;
+    }
+
+    bool getAttributeNames(StringList& attributeNames) const SMTG_OVERRIDE
+    {
+        attributeNames.emplace_back(kAttrPDclick);
+        return true;
+    }
+
+    AttrType getAttributeType(const std::string& attributeName) const SMTG_OVERRIDE
+    {
+        if (attributeName == kAttrPDclick)
+            return kListType;
+        return kUnknownType;
+    }
+
+    //------------------------------------------------------------------------
+    bool getAttributeValue(
+        CView* view,
+        const string& attributeName,
+        string& stringValue,
+        const IUIDescription* desc) const SMTG_OVERRIDE
+    {
+        auto* vv = dynamic_cast<ClickResetParamDisplay*> (view);
+
+        if (!vv)
+            return false;
+
+        if (attributeName == kAttrPDclick)
+        {
+            if (vv->getStyle_() & ClickResetParamDisplay::kUpdateMin)
+                stringValue = kAttrPDMin;
+            else
+                stringValue = kAttrPDMax;
+            return true;
+        }
+
+        return false;
+    }
+
+    //------------------------------------------------------------------------
+    bool getPossibleListValues(
+        const string& attributeName,
+        ConstStringPtrList& values) const SMTG_OVERRIDE
+    {
+        if (attributeName == kAttrPDclick)
+        {
+            values.emplace_back(&kAttrPDMin);
+            values.emplace_back(&kAttrPDMax);
+            return true;
+        }
+        return false;
+    }
+};
+
+//------------------------------------------------------------------------
+// Meter View Container Factory
+//------------------------------------------------------------------------
+class MyMeterViewContainerFactory : public ViewCreatorAdapter
+{
+public:
+    MyMeterViewContainerFactory() { UIViewFactory::registerViewCreator(*this); }
+    IdStringPtr getViewName() const override { return "MeterViewContainer"; }
+    IdStringPtr getBaseViewName() const override { return UIViewCreator::kCViewContainer; }
+    CView* create(const UIAttributes& attributes, const IUIDescription* description) const override
+    {
+        CRect ss(0, 0, 100, 20);
+        return new MeterViewContainer(ss);
+    }
+};
+
+//------------------------------------------------------------------------
+// VU Meter View Factory
+//------------------------------------------------------------------------
 class MyVUMeterFactory : public ViewCreatorAdapter
 {
 public:
@@ -661,9 +868,11 @@ public:
 };
 
 //create a static instance so that it registers itself with the view factory
-MyVUMeterFactory       __gMyVUMeterFactory;
-MyTransferCurveControlFactory __gMyTransferCurveControlFactory;
-MyEQCurveViewFactory   __gMyEQCurveViewFactory;
+MyEQCurveViewFactory            __gMyEQCurveViewFactory;
+MyTransferCurveControlFactory   __gMyTransferCurveControlFactory;
+MyClickResetParamDisplayFactory __gMyClickResetParamDisplayFactory;
+MyMeterViewContainerFactory     __gMyMeterViewContainerFactory;
+MyVUMeterFactory                __gMyVUMeterFactory;
 } // namespace VSTGUI
 
 
@@ -1321,11 +1530,15 @@ tresult PLUGIN_API RLFCMP_Controller::notify(Vst::IMessage* message)
     {
         ParamValue getValue = 0.0;
 
-        if (message->getAttributes ()->getFloat ("Input L", getValue) == kResultTrue) vuInLPeak  = getValue;
-        if (message->getAttributes ()->getFloat ("Input R", getValue) == kResultTrue) vuInRPeak  = getValue;
-        if (message->getAttributes ()->getFloat ("Output L", getValue) == kResultTrue) vuOutLPeak  = getValue;
-        if (message->getAttributes ()->getFloat ("Output R", getValue) == kResultTrue) vuOutRPeak  = getValue;
-        if (message->getAttributes ()->getFloat ("Gain Reduction", getValue) == kResultTrue)
+        if (message->getAttributes ()->getFloat (msgInputPeakL, getValue) == kResultTrue) vuInLPeak  = getValue;
+        if (message->getAttributes ()->getFloat (msgInputPeakR, getValue) == kResultTrue) vuInRPeak  = getValue;
+        if (message->getAttributes ()->getFloat (msgInputRMSL, getValue) == kResultTrue) vuInLRMS  = getValue;
+        if (message->getAttributes ()->getFloat (msgInputRMSR, getValue) == kResultTrue) vuInRRMS  = getValue;
+        if (message->getAttributes ()->getFloat (msgOutputPeakL, getValue) == kResultTrue) vuOutLPeak  = getValue;
+        if (message->getAttributes ()->getFloat (msgOutputPeakR, getValue) == kResultTrue) vuOutRPeak  = getValue;
+        if (message->getAttributes ()->getFloat (msgOutputRMSL, getValue) == kResultTrue) vuOutLRMS  = getValue;
+        if (message->getAttributes ()->getFloat (msgOutputRMSR, getValue) == kResultTrue) vuOutRRMS  = getValue;
+        if (message->getAttributes ()->getFloat (msgGainReduction, getValue) == kResultTrue)
         {
             vuGainReduction  = getValue;
             

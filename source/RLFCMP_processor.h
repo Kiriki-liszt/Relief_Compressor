@@ -96,20 +96,36 @@ protected:
     static SMTG_CONSTEXPR int32 order = 2;
     
     static SMTG_CONSTEXPR int32 maxLAH = 256;
-
+    
+    static SMTG_CONSTEXPR double peakEnvDecay = 0.4; //sec
+    static SMTG_CONSTEXPR double peakRMSDecay = 0.3; //sec
+    
     // Internal datastructures ===========================================================
     ParamValue HT_coefs[path_num][HT_stage];
     ParamValue HT_state[2][path_num][io_num][order][HT_stage] = {0, }; // 2-channel, 2-path, 2-state(x, y), 2-order(x1, x2), numCoefs-stages,
     
     ParamValue detector_state[2]; // Leaky Integrator, naive one-pole filter, EWMA, etc
     
-    PassShelfFilter SC_LF[2], SC_HF[2];
+    PassShelfFilter SC_LF[2], SC_HF[2]; // SideChain Filters, simplified for pass and shelf, 6dB/oct 1p1z filter
     
     int32 lookaheadSize = 0;
     int32 halfTap = lookaheadSize / 2;
     int32 condition = lookaheadSize % 2;
-
+    
     ParamValue LAH_coef[maxLAH] = {0.0, };
+    
+    LevelEnvelopeFollower VuInputRMS[2] = {
+        LevelEnvelopeFollower(LevelEnvelopeFollower::rmsEnv, peakRMSDecay),
+        LevelEnvelopeFollower(LevelEnvelopeFollower::rmsEnv, peakRMSDecay)};
+    LevelEnvelopeFollower VuOutputRMS[2] = {
+        LevelEnvelopeFollower(LevelEnvelopeFollower::rmsEnv, peakRMSDecay),
+        LevelEnvelopeFollower(LevelEnvelopeFollower::rmsEnv, peakRMSDecay)};
+    LevelEnvelopeFollower VuInputPeak[2] = {
+        LevelEnvelopeFollower(LevelEnvelopeFollower::peakEnv, peakEnvDecay),
+        LevelEnvelopeFollower(LevelEnvelopeFollower::peakEnv, peakEnvDecay)};
+    LevelEnvelopeFollower VuOutputPeak[2] = {
+        LevelEnvelopeFollower(LevelEnvelopeFollower::peakEnv, peakEnvDecay),
+        LevelEnvelopeFollower(LevelEnvelopeFollower::peakEnv, peakEnvDecay)};
 
     // Parameters ===========================================================
     bool       pBypass     = dftBypass > 0;
@@ -118,11 +134,11 @@ protected:
     overSample pOS         = overSample_1x;
     
     bool       pScLfIn     = dftScLfIn > 0;
-    ParamValue pScLfType   = 0;
+    ParamValue pScLfType   = PassShelfFilter::rLow;
     ParamValue pScLfFreq   = paramScLfFreq. ToNormalized(dftScLfFreq);
     ParamValue pScLfGain   = paramScLfGain. ToNormalized(dftScLfGain);
     bool       pScHfIn     = dftScHfIn > 0;
-    ParamValue pScHfType   = 1;
+    ParamValue pScHfType   = PassShelfFilter::rHigh;
     ParamValue pScHfFreq   = paramScHfFreq. ToNormalized(dftScHfFreq);
     ParamValue pScHfGain   = paramScHfGain. ToNormalized(dftScHfGain);
     bool       pScListen   = false;
@@ -142,17 +158,16 @@ protected:
     ParamValue pOutput     = paramOutput.   ToNormalized(dftOutput);
     
     // Values for GUI ========================================================
-    ParamValue Input_L     = 0.0, Input_R  = 0.0;
-    ParamValue Output_L    = 0.0, Output_R = 0.0;
-    ParamValue Gain_Reduction = 0.0;
+    ParamValue fInputVuRMS[2] = {0.0, }, fOutputVuRMS[2] = {0.0, };  // for each channel
+    ParamValue fInputVuPeak[2] = {0.0, }, fOutputVuPeak[2] = {0.0, };
+    ParamValue fGainReduction = 0.0;
     
     // Internal plain values =================================================
     SampleRate projectSR   = 48000.0;
-    SampleRate internalSR  = 192000.0;
+    SampleRate internalSR  = 192000.0;//actually, not used
     ParamValue detectorIndicator = 0.0;
     
     int32      type        = paramType.ToPlainList(pType);
-    
     ParamValue atkCoef     = getTau(dftAttack,  projectSR);
     ParamValue rlsCoef     = getTau(dftRelease, projectSR);
 
@@ -160,8 +175,7 @@ protected:
     ParamValue slope       = 1.0 / ratio - 1.0;
     ParamValue knee        = paramKnee.ToPlain(pKnee);
     ParamValue kneeHalf    = knee / 2.0;
-    ParamValue threshold   = (ratio == 1.0) ? 0.0 : paramThreshold.ToPlain(pThreshold) * (1.0 + (1.0/(ratio - 1.0))); // in dB
-    ParamValue preGain     = (ratio == 1.0) ? 1.0 : DecibelConverter::ToGain(-paramThreshold.ToPlain(pThreshold));    // in Gain
+    ParamValue threshold   = paramThreshold.ToPlain(pThreshold);
     ParamValue makeup      = DecibelConverter::ToGain(paramMakeup.ToPlain(pMakeup));
     
     ParamValue mix         = pMix;

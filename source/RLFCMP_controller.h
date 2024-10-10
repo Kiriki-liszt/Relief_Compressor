@@ -39,19 +39,19 @@ public:
     CColor getFFTFillColor() const { return FFTFillColor; }
     
     // get/set Parameters
-    void   setIn(bool value, int type) { if (type == 0) {LF_SVF.setIn(value);}   else {HF_SVF.setIn(value);} setDirty(true); }
-    bool   getIn(int type) const       { if (type == 0) {return LF_SVF.getIn();} else {return HF_SVF.getIn();} }
+    void   setIn(bool value, int type) { if (type == yg331::PassShelfFilter::rLow) {LF_SVF.setIn(value);}   else {HF_SVF.setIn(value);} setDirty(true); }
+    bool   getIn(int type) const       { if (type == yg331::PassShelfFilter::rLow) {return LF_SVF.getIn();} else {return HF_SVF.getIn();} }
     
-    void   setType(int value, int type) { if (type == 0) {LF_SVF.setType(value);} else {HF_SVF.setType(value);} setDirty(true); }
-    int    getType(int type) const { if (type == 0) {return LF_SVF.getType();} else {return HF_SVF.getType();} }
+    void   setType(int value, int type) { if (type == yg331::PassShelfFilter::rLow) {LF_SVF.setType(value);} else {HF_SVF.setType(value);} setDirty(true); }
+    int    getType(int type) const { if (type == yg331::PassShelfFilter::rLow) {return LF_SVF.getType();} else {return HF_SVF.getType();} }
     
-    void   setFreq(double value, int type) { if (type == 0) {LF_SVF.setFreq(value);} else {HF_SVF.setFreq(value);} setDirty(true); }
-    int    getFreq(int type) const { if (type == 0) {return LF_SVF.getFreq();} else {return HF_SVF.getFreq();} }
+    void   setFreq(double value, int type) { if (type == yg331::PassShelfFilter::rLow) {LF_SVF.setFreq(value);} else {HF_SVF.setFreq(value);} setDirty(true); }
+    int    getFreq(int type) const { if (type == yg331::PassShelfFilter::rLow) {return LF_SVF.getFreq();} else {return HF_SVF.getFreq();} }
     
-    void   setGain(double value, int type) { if (type == 0) {LF_SVF.setGain(value);} else {HF_SVF.setGain(value);} setDirty(true); }
-    int    getGain(int type) const { if (type == 0) {return LF_SVF.getGain();} else {return HF_SVF.getGain();} }
+    void   setGain(double value, int type) { if (type == yg331::PassShelfFilter::rLow) {LF_SVF.setGain(value);} else {HF_SVF.setGain(value);} setDirty(true); }
+    int    getGain(int type) const { if (type == yg331::PassShelfFilter::rLow) {return LF_SVF.getGain();} else {return HF_SVF.getGain();} }
     
-    void   makeSVF(int type) { if (type == 0) {LF_SVF.makeSVF();} else {HF_SVF.makeSVF();} setDirty(true); }
+    void   makeSVF() { LF_SVF.makeSVF(); HF_SVF.makeSVF(); setDirty(true); }
 
     // overrides
     void setDirty(bool state) override { CView::setDirty(state); };
@@ -60,9 +60,7 @@ public:
     bool sizeToFit() override;
 
     /** called on idle when view wants idle */
-    void onIdle() override {
-        invalid();
-    };
+    void onIdle() override { invalid(); };
 
     CLASS_METHODS(EQCurveView, CControl)
 
@@ -114,20 +112,20 @@ public:
     }
 
     // get/set Parameters
-    void   setThreshold(double value) { if (Threshold != value) { Threshold = value; setDirty(true); } }
-    double getThreshold() const { return Threshold; }
+    void   setThreshold(double value) { if (threshold != value) { threshold = value; setDirty(true); } }
+    double getThreshold() const { return threshold; }
 
-    void   setKnee(double value) { if (Knee != value) { Knee = value; setDirty(true); } }
-    double getKnee() const { return Knee; }
+    void   setKnee(double value) { if (knee != value) { knee = value; kneeHalf  = knee / 2.0; setDirty(true); } }
+    double getKnee() const { return knee; }
 
-    void   setRatio(double value) { if (Ratio != value) { Ratio = value; setDirty(true); } }
-    double getRatio() const { return Ratio; }
+    void   setRatio(double value) { if (ratio != value) { ratio = value; slope = 1.0 / ratio - 1.0; setDirty(true); } }
+    double getRatio() const { return ratio; }
     
-    void   setMakeup(double value) { if (Makeup != value) { Makeup = value; setDirty(true); } }
-    double getMakeup() const { return Makeup; }
+    void   setMakeup(double value) { if (makeup != value) { makeup = value; setDirty(true); } }
+    double getMakeup() const { return makeup; }
 
-    void   setMix(double value) { if (Mix != value) { Mix = value; setDirty(true); } }
-    double getMix() const { return Mix; }
+    void   setMix(double value) { if (mix != value) { mix = value; setDirty(true); } }
+    double getMix() const { return mix; }
 
     // get/set Attributes
     void   setBackColor(CColor color) { if (BackColor != color) { BackColor = color; setDirty(true); } }
@@ -138,128 +136,10 @@ public:
 
     // overrides
     void setDirty(bool state) override { CView::setDirty(state); };
-    void draw(CDrawContext* _pContext) override
-    {
-        CDrawContext* pContext = _pContext;
-
-        // draw border
-        pContext->setLineWidth(1);
-        pContext->setFillColor(BackColor);
-        pContext->setFrameColor(VSTGUI::CColor(223, 233, 233, 255)); // black borders
-        pContext->drawRect(getViewSize(), VSTGUI::kDrawFilledAndStroked);
-
-        // draw db lines
-        
-        //double FREQ_LOG_MAX = log(MAX_FREQ / MIN_FREQ);
-        //double DB_EQ_RANGE = 15.0;
-        {
-            VSTGUI::CRect r(getViewSize());
-            auto width = r.getWidth();
-            auto height = r.getHeight();
-
-            pContext->setFrameColor(VSTGUI::CColor(255, 255, 255, 55));
-            for (int x = MIN_dB; x < MAX_dB; x += 10) {
-                VSTGUI::CCoord ver = width * -x * Inv_DB_R;
-                const VSTGUI::CPoint _p1(r.left + ver, r.bottom);
-                const VSTGUI::CPoint _p2(r.left + ver, r.top);
-                pContext->drawLine(_p1, _p2);
-            }
-
-            for (int x = MIN_dB; x < MAX_dB; x += 10) {
-                VSTGUI::CCoord ver = height * -x * Inv_DB_R;
-                const VSTGUI::CPoint _p1(r.left, r.bottom - ver);
-                const VSTGUI::CPoint _p2(r.right, r.bottom - ver);
-                pContext->drawLine(_p1, _p2);
-            }
-        }
-
-
-        // draw curve
-        VSTGUI::CGraphicsPath* path = pContext->createGraphicsPath();
-        if (path)
-        {
-            VSTGUI::CRect r(getViewSize());
-            // VSTGUI::CCoord inset = 30;
-            // r.inset(inset, 0);
-
-            // double thrh = getThreshold() * (0.0 - (-60.0)) + (-60.0);
-            // double knee = getKnee() * 20.0;
-            // double kneh = knee / 2.0;
-            // double inv_knee = 1.0 / knee;
-            // double ratio = getRatio() * (20.0 - (1.0)) + (1.0);
-            // double slope = 1.0 / ratio - 1.0;
-            // double makeup = getMakeup() * (12.0 - (-12.0)) + (-12.0);
-            double width = r.getWidth();
-            double inv_width = 1.0 / r.getWidth();
-            double height = r.getHeight();
-            
-            
-            // double ratio     = paramRatio.ToPlain(pRatio);
-            double slope     = 1.0 / Ratio - 1.0;
-            // knee      = paramKnee.ToPlain(pKnee);
-            double kneeHalf  = Knee / 2.0;
-            double threshold = (Ratio == 1.0) ? 0.0 : Threshold * (1.0 + (1.0/(Ratio - 1.0)));
-            double preGain   = (Ratio == 1.0) ? 0.0 : (-Threshold);
-            // makeup    = DecibelConverter::ToGain(paramMakeup.ToPlain(pMakeup));
-
-            path->beginSubpath(VSTGUI::CPoint(r.left - 1, r.bottom));
-            for (int x = -1; x <= width + 1; x++)
-            {
-                double x_dB = -DB_Range * (1.0 - x * inv_width); // -60 -> 0
-                x_dB += preGain;
-                
-                double overshoot = x_dB - threshold;
-                
-                double gain = 0.0;
-                if (overshoot <= -kneeHalf)
-                    gain = 0.0;
-                else if (overshoot > -kneeHalf && overshoot <= kneeHalf)
-                    gain = 0.5 * slope * ((overshoot + kneeHalf) * (overshoot + kneeHalf)) / Knee;
-                else
-                    gain = slope * overshoot;
-
-                double y_dB = x_dB + gain + Makeup;
-                // y_dB = Mix * y_dB + (1.0 - Mix) * x_dB;
-                
-                double y = -y_dB * Inv_DB_R; // 1 ~ 0
-                y = (1.0 - y) * height;
-
-                path->addLine(VSTGUI::CPoint(r.left + x, r.bottom - y));
-            }
-            path->addLine(VSTGUI::CPoint(r.right + 1, r.bottom + 1));
-            path->addLine(VSTGUI::CPoint(r.left - 1, r.bottom + 1));
-            path->closeSubpath();
-            
-            pContext->setFrameColor(LineColor);
-            pContext->setDrawMode(VSTGUI::kAntiAliasing);
-            pContext->setLineWidth(1.5);
-            pContext->setLineStyle(VSTGUI::kLineSolid);
-            pContext->drawGraphicsPath(path, VSTGUI::CDrawContext::kPathStroked);
-            path->forget();
-            
-        }
-
-        setDirty(false);
-    };
-    void setViewSize(const CRect& newSize, bool invalid = true) override
-    {
-        CControl::setViewSize(newSize, invalid);
-    };
-    bool sizeToFit() override {
-        if (getDrawBackground())
-        {
-            CRect vs(getViewSize());
-            vs.setWidth(getDrawBackground()->getWidth());
-            vs.setHeight(getDrawBackground()->getHeight());
-            setViewSize(vs);
-            setMouseableArea(vs);
-            return true;
-        }
-        return false;
-    };
-    void onIdle() override {
-        invalid();
-    };
+    void draw(CDrawContext* _pContext) override;
+    void setViewSize(const CRect& newSize, bool invalid = true) override { CControl::setViewSize(newSize, invalid); };
+    bool sizeToFit() override ;
+    void onIdle() override { invalid(); };
 
     CLASS_METHODS(TransferCurveView, CControl)
 
@@ -271,16 +151,100 @@ protected:
     CColor        BackColor;
     CColor        LineColor;
 
-    double Threshold = 0.0;
-    double Knee = 0.0;
-    double Ratio = 0.0;
-    double Makeup = 0.0;
-    double Mix = 1.0;
+    double threshold = yg331::dftThreshold;
+    double knee      = yg331::dftKnee;
+    double ratio     = yg331::dftRatio;
+    double makeup    = yg331::dftMakeup;
+    double mix       = yg331::dftMix/100.0;
+    
+    double slope     = 1.0 / ratio - 1.0;
+    double kneeHalf  = knee / 2.0;
 
-    const double MAX_dB = 0.0;
-    const double MIN_dB = -60.0;
-    const double DB_Range = MAX_dB - MIN_dB;
-    const double Inv_DB_R = 1.0 / DB_Range;
+    static constexpr double MAX_dB = 0.0;
+    static constexpr double MIN_dB = -60.0;
+    static constexpr double DB_Range = MAX_dB - MIN_dB;
+    static constexpr double Inv_DB_R = 1.0 / DB_Range;
+};
+
+//------------------------------------------------------------------------
+//  Click to Reset Param Display View
+//------------------------------------------------------------------------
+class ClickResetParamDisplay : public CParamDisplay {
+public:
+    enum updateStyle
+    {
+        kUpdateMin = 1 << 0,
+        kUpdateMax = 1 << 1,
+    };
+    ClickResetParamDisplay
+        (const CRect& size, CBitmap* background = nullptr, int32_t style = 0)
+        : CParamDisplay(size, background, style)
+    {
+        originalBack = getBackColor();
+        setWantsIdle(true);
+    };
+    ClickResetParamDisplay
+        (const CParamDisplay& paramDisplay)
+        : CParamDisplay(paramDisplay)
+    {
+        originalBack = getBackColor();
+        setWantsIdle(true);
+    };
+    
+    // get/set Attributes
+    void    setStyle_(int32_t newStyle) { _style = newStyle; }
+    int32_t getStyle_() const { return _style; }
+    
+    // overrides
+    void setValue(float val) override
+    {
+        directValue = val;
+        if (_style == kUpdateMax)
+            CParamDisplay::setValue(std::max(getValue(), val));
+        else
+            CParamDisplay::setValue(std::min(getValue(), val));
+        
+        if (_style == kUpdateMax)
+            if (getValue()>0.0)
+                if (!over) {
+                    originalBack = getBackColor();
+                    setBackColor(VSTGUI::kRedCColor);
+                    over = true;
+                }
+    };
+    
+    void onMouseDownEvent(MouseDownEvent& event) override {
+        if (over) {
+            setBackColor(originalBack);
+            over = false;
+        }
+        CParamDisplay::setValue(directValue);
+        CParamDisplay::onMouseDownEvent(event);
+    };
+    
+    void onIdle() override { invalid(); };
+ 
+protected:
+    int32_t _style;
+    float   directValue = 0.0;
+    bool    over = false;
+    CColor  originalBack;
+};
+
+//------------------------------------------------------------------------
+//  Metering reset container
+//------------------------------------------------------------------------
+class MeterViewContainer : public CViewContainer
+{
+public:
+    MeterViewContainer(const CRect& size) : CViewContainer(size) {};
+    void onMouseDownEvent(MouseDownEvent& event) override {
+        for (auto& child : getChildren())
+        {
+            child->onMouseDownEvent(event);
+        }
+        CViewContainer::onMouseDownEvent(event);
+    };
 };
 
 //------------------------------------------------------------------------
@@ -320,11 +284,8 @@ public:
     bool sizeToFit() override;
     
     /** called on idle when view wants idle */
-    void onIdle() override {
-        invalid();
-    };
+    void onIdle() override { invalid(); };
     
-
     CLASS_METHODS(MyVuMeter, CControl)
 
 protected:
@@ -597,17 +558,16 @@ private:
                 if (message == kChanged)
                 {
                     
-                    if (p == ParamScLfIn   && ParamScLfIn  ) eqCurveView->setIn  (p->getNormalized(), yg331::PassShelfFilter::range::Low);
-                    if (p == ParamScLfType && ParamScLfType) eqCurveView->setType(paramScLfType.ToPlain(p->getNormalized()), yg331::PassShelfFilter::range::Low);
-                    if (p == ParamScLfFreq && ParamScLfFreq) eqCurveView->setFreq(paramScLfFreq.ToPlain(p->getNormalized()), yg331::PassShelfFilter::range::Low);
-                    if (p == ParamScLfGain && ParamScLfGain) eqCurveView->setGain(paramScLfGain.ToPlain(p->getNormalized()), yg331::PassShelfFilter::range::Low);
-                    if (p == ParamScHfIn   && ParamScHfIn  ) eqCurveView->setIn  (p->getNormalized(), yg331::PassShelfFilter::range::High);
-                    if (p == ParamScHfType && ParamScHfType) eqCurveView->setType(paramScHfType.ToPlain(p->getNormalized()), yg331::PassShelfFilter::range::High);
-                    if (p == ParamScHfFreq && ParamScHfFreq) eqCurveView->setFreq(paramScHfFreq.ToPlain(p->getNormalized()), yg331::PassShelfFilter::range::High);
-                    if (p == ParamScHfGain && ParamScHfGain) eqCurveView->setGain(paramScHfGain.ToPlain(p->getNormalized()), yg331::PassShelfFilter::range::High);
+                    if (p == ParamScLfIn   && ParamScLfIn  ) eqCurveView->setIn  (p->getNormalized(), yg331::PassShelfFilter::rLow);
+                    if (p == ParamScLfType && ParamScLfType) eqCurveView->setType(paramScLfType.ToPlain(p->getNormalized()), yg331::PassShelfFilter::rLow);
+                    if (p == ParamScLfFreq && ParamScLfFreq) eqCurveView->setFreq(paramScLfFreq.ToPlain(p->getNormalized()), yg331::PassShelfFilter::rLow);
+                    if (p == ParamScLfGain && ParamScLfGain) eqCurveView->setGain(paramScLfGain.ToPlain(p->getNormalized()), yg331::PassShelfFilter::rLow);
+                    if (p == ParamScHfIn   && ParamScHfIn  ) eqCurveView->setIn  (p->getNormalized(), yg331::PassShelfFilter::rHigh);
+                    if (p == ParamScHfType && ParamScHfType) eqCurveView->setType(paramScHfType.ToPlain(p->getNormalized()), yg331::PassShelfFilter::rHigh);
+                    if (p == ParamScHfFreq && ParamScHfFreq) eqCurveView->setFreq(paramScHfFreq.ToPlain(p->getNormalized()), yg331::PassShelfFilter::rHigh);
+                    if (p == ParamScHfGain && ParamScHfGain) eqCurveView->setGain(paramScHfGain.ToPlain(p->getNormalized()), yg331::PassShelfFilter::rHigh);
                     // curveView->invalid();
-                    eqCurveView->makeSVF(yg331::PassShelfFilter::range::Low);
-                    eqCurveView->makeSVF(yg331::PassShelfFilter::range::High);
+                    eqCurveView->makeSVF();
                 }
                 else if (message == kWillDestroy)
                 {
@@ -732,7 +692,7 @@ private:
                     if (p == ParamKnee      && ParamKnee     ) transferCurveView->setKnee     (paramKnee     .ToPlain(p->getNormalized()));
                     if (p == ParamRatio     && ParamRatio    ) transferCurveView->setRatio    (paramRatio    .ToPlain(p->getNormalized()));
                     if (p == ParamMakeup    && ParamMakeup   ) transferCurveView->setMakeup   (paramMakeup   .ToPlain(p->getNormalized()));
-                    if (p == ParamMix       && ParamMix      ) transferCurveView->setMix      (paramMix      .ToPlain(p->getNormalized()));
+                    if (p == ParamMix       && ParamMix      ) transferCurveView->setMix      (p->getNormalized()); // mix is in 0~1
                     // curveView->invalid();
                 }
                 else if (message == kWillDestroy)
