@@ -35,13 +35,14 @@ enum {
     kParamScListen,
     
     // Envelope Detection
-    kParamType,
+    kParamDetectorType,
+    kParamSidechainTopology,
     kParamAttack,
     kParamRelease,
     kParamLookaheadEnable,
 
     // Non-Linear Transfer Curve
-    kParamThreshold,   // GML-stlye : input is turned up to make threshold go down, and turned down same amount. Silimar to Auto-gain. 
+    kParamThreshold,
     kParamRatio,
     kParamKnee,
     kParamMakeup,

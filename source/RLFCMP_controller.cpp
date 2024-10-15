@@ -1132,14 +1132,20 @@ tresult PLUGIN_API RLFCMP_Controller::initialize (FUnknown* context)
     ParamScListen->appendString (STR16("ON"));
     parameters.addParameter (ParamScListen);
     
-    tag          = kParamType;
-    auto* ParamType = new Vst::StringListParameter(STR16("Detector Type"), tag);
-    ParamType->appendString (STR16("Bold"));
-    ParamType->appendString (STR16("Smooth"));
-    ParamType->appendString (STR16("Clean"));
-    ParamType->getInfo().defaultNormalizedValue = ParamType->toNormalized(1.0);
-    ParamType->setNormalized(ParamType->toNormalized(1.0));
-    parameters.addParameter (ParamType);
+    tag          = kParamDetectorType;
+    auto* ParamDetectorType = new Vst::StringListParameter(STR16("Detector Type"), tag);
+    ParamDetectorType->appendString (STR16("Bold"));
+    ParamDetectorType->appendString (STR16("Smooth"));
+    ParamDetectorType->appendString (STR16("Clean"));
+    ParamDetectorType->getInfo().defaultNormalizedValue = ParamDetectorType->toNormalized(1.0);
+    ParamDetectorType->setNormalized(ParamDetectorType->toNormalized(1.0));
+    parameters.addParameter (ParamDetectorType);
+    
+    tag          = kParamSidechainTopology;
+    auto* ParamSidechainTopology = new Vst::StringListParameter(STR16("Sidechain Topology"), tag);
+    ParamSidechainTopology->appendString (STR16("Lin"));
+    ParamSidechainTopology->appendString (STR16("Log"));
+    parameters.addParameter (ParamSidechainTopology);
 
     tag          = kParamAttack;
     flags        = Vst::ParameterInfo::kCanAutomate;

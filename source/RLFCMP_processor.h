@@ -56,26 +56,23 @@ public:
     
     //------------------------------------------------------------------------
 protected:
-    // Dunno why, but these are happy only if these are defines here
-    // Otherwise, the capacity of vector gets ridiculusly large
-    std::vector<std::deque<ParamValue>*> lookAheadDelayLine;
-    std::vector<std::deque<ParamValue>*> latencyDelayLine;
-    
     // Internal functions ===========================================================
     template <typename SampleType>
     void processAudio (SampleType** inputs, SampleType** outputs, int32 numChannels, SampleRate getSampleRate, int32 sampleFrames);
     
-    // alpha = 1 - exp(-1 / (sec * 0.001 * SR)) = tan(1 / (2 * sec * 0.001 * SR))
-    ParamValue getTau  (ParamValue sec, SampleRate SR) { return exp(-1.0 / (sec * 0.001 * SR)); }
+    // alpha = 1.0 - exp(-1.0 / (sec * 0.001 * SR)) = tan(1.0 / (2.0 * sec * 0.001 * SR))
+    static inline ParamValue getTau  (ParamValue msec, SampleRate SR) { return exp(-1.0 / (msec * 0.001 * SR)); }
     
     void call_after_SR_changed ();
     void call_after_parameter_changed ();
     void sendFloat (Steinberg::Vst::IAttributeList::AttrID aid, double& value);
     
     // Some definitions ===========================================================
+    static SMTG_CONSTEXPR int32 maxChannel = 2; // Strictly Stereo
+    
     static SMTG_CONSTEXPR ParamValue k_HT  = 300.0;
     static SMTG_CONSTEXPR ParamValue k_rms = 600.0; // if small, very short attack makes step in release
-    static SMTG_CONSTEXPR ParamValue k_log = 100.0;
+    static SMTG_CONSTEXPR ParamValue k_detector = 3000.0;
     static SMTG_CONSTEXPR ParamValue bw = 300.0; // Hz
     
     static SMTG_CONSTEXPR int32 HT_stage = 3;
@@ -100,30 +97,40 @@ protected:
     static SMTG_CONSTEXPR double peakEnvDecay = 0.4; //sec
     static SMTG_CONSTEXPR double peakRMSDecay = 0.3; //sec
     
+    static SMTG_CONSTEXPR double detectorAtk = 0.05; //msec
+    static SMTG_CONSTEXPR double detectorRls = 10.0; //msec
+    
     // Internal datastructures ===========================================================
+    PassShelfFilter SC_LF[maxChannel], SC_HF[maxChannel]; // SideChain Filters, simplified for pass and shelf, 6dB/oct 1p1z filter
+    
     ParamValue HT_coefs[path_num][HT_stage];
-    ParamValue HT_state[2][path_num][io_num][order][HT_stage] = {0, }; // 2-channel, 2-path, 2-state(x, y), 2-order(x1, x2), numCoefs-stages,
+    ParamValue HT_state[maxChannel][path_num][io_num][order][HT_stage] = {0, }; // 2-channel, 2-path, 2-state(x, y), 2-order(x1, x2), numCoefs-stages,
     
-    ParamValue detector_state[2]; // Leaky Integrator, naive one-pole filter, EWMA, etc
+    ParamValue detector_state[maxChannel]; // Leaky Integrator, naive one-pole filter, EWMA, etc
     
-    PassShelfFilter SC_LF[2], SC_HF[2]; // SideChain Filters, simplified for pass and shelf, 6dB/oct 1p1z filter
-    
+    ParamValue hilbert_state[maxChannel]; // Leaky Integrator, naive one-pole filter, EWMA, etc
+    ParamValue squared_state[maxChannel]; // Leaky Integrator, naive one-pole filter, EWMA, etc
+    ParamValue rectified_state[maxChannel]; // Leaky Integrator, naive one-pole filter, EWMA, etc
+
     int32 lookaheadSize = 0;
     int32 halfTap = lookaheadSize / 2;
     int32 condition = lookaheadSize % 2;
     
     ParamValue LAH_coef[maxLAH] = {0.0, };
     
-    LevelEnvelopeFollower VuInputRMS[2] = {
+    std::deque<ParamValue> lookAheadDelayLine[maxChannel];
+    std::deque<ParamValue> latencyDelayLine[maxChannel];
+    
+    LevelEnvelopeFollower VuInputRMS[maxChannel] = {
         LevelEnvelopeFollower(LevelEnvelopeFollower::rmsEnv, peakRMSDecay),
         LevelEnvelopeFollower(LevelEnvelopeFollower::rmsEnv, peakRMSDecay)};
-    LevelEnvelopeFollower VuOutputRMS[2] = {
+    LevelEnvelopeFollower VuOutputRMS[maxChannel] = {
         LevelEnvelopeFollower(LevelEnvelopeFollower::rmsEnv, peakRMSDecay),
         LevelEnvelopeFollower(LevelEnvelopeFollower::rmsEnv, peakRMSDecay)};
-    LevelEnvelopeFollower VuInputPeak[2] = {
+    LevelEnvelopeFollower VuInputPeak[maxChannel] = {
         LevelEnvelopeFollower(LevelEnvelopeFollower::peakEnv, peakEnvDecay),
         LevelEnvelopeFollower(LevelEnvelopeFollower::peakEnv, peakEnvDecay)};
-    LevelEnvelopeFollower VuOutputPeak[2] = {
+    LevelEnvelopeFollower VuOutputPeak[maxChannel] = {
         LevelEnvelopeFollower(LevelEnvelopeFollower::peakEnv, peakEnvDecay),
         LevelEnvelopeFollower(LevelEnvelopeFollower::peakEnv, peakEnvDecay)};
 
@@ -143,7 +150,8 @@ protected:
     ParamValue pScHfGain   = paramScHfGain. ToNormalized(dftScHfGain);
     bool       pScListen   = false;
     
-    ParamValue pType       = paramType.     ToNormalized(dftType);
+    ParamValue pDType      = paramDetectorType.ToNormalized(dftDetectorType);
+    ParamValue pSCTopology = ScTopologyLin;
     ParamValue pAttack     = paramAttack.   ToNormalized(dftAttack);
     ParamValue pRelease    = paramRelease.  ToNormalized(dftRelease);
     bool       pLookaheadEnable = true;
@@ -158,8 +166,8 @@ protected:
     ParamValue pOutput     = paramOutput.   ToNormalized(dftOutput);
     
     // Values for GUI ========================================================
-    ParamValue fInputVuRMS[2] = {0.0, }, fOutputVuRMS[2] = {0.0, };  // for each channel
-    ParamValue fInputVuPeak[2] = {0.0, }, fOutputVuPeak[2] = {0.0, };
+    ParamValue fInputVuRMS[maxChannel] = {0.0, }, fOutputVuRMS[maxChannel] = {0.0, };
+    ParamValue fInputVuPeak[maxChannel] = {0.0, }, fOutputVuPeak[maxChannel] = {0.0, };
     ParamValue fGainReduction = 0.0;
     
     // Internal plain values =================================================
@@ -167,7 +175,11 @@ protected:
     SampleRate internalSR  = 192000.0;//actually, not used
     ParamValue detectorIndicator = 0.0;
     
-    int32      type        = paramType.ToPlainList(pType);
+    ParamValue dtrAtkCoef  = getTau(detectorAtk,  projectSR);
+    ParamValue dtrRlsCoef  = getTau(detectorRls,  projectSR);
+    
+    int32      dType       = paramDetectorType.ToPlainList(pDType);
+    int32      scTopology  = paramSidechainTopology.ToPlainList(pSCTopology);
     ParamValue atkCoef     = getTau(dftAttack,  projectSR);
     ParamValue rlsCoef     = getTau(dftRelease, projectSR);
 

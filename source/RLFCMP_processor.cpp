@@ -60,8 +60,6 @@ tresult PLUGIN_API RLFCMP_Processor::initialize (FUnknown* context)
 tresult PLUGIN_API RLFCMP_Processor::terminate ()
 {
     // Here the Plug-in will be de-instantiated, last possibility to remove some memory!
-    for (auto& iter : lookAheadDelayLine) delete iter;
-    for (auto& iter : latencyDelayLine) delete iter;
     
     //---do not forget to call parent ------
     return AudioEffect::terminate ();
@@ -98,27 +96,28 @@ tresult PLUGIN_API RLFCMP_Processor::process (Vst::ProcessData& data)
                         case kParamBypass:          pBypass     = (value > 0.5); break;
                         // case kParamZoom:       pZoom       = value; break;
                         // case kParamOS:         pOS         = value; break;
-                        case kParamScLfIn:          pScLfIn     = (value > 0.5); break;
-                        case kParamScLfType:        pScLfType   = value; break;
-                        case kParamScLfFreq:        pScLfFreq   = value; break;
-                        case kParamScLfGain:        pScLfGain   = value; break;
-                        case kParamScHfIn:          pScHfIn     = (value > 0.5); break;
-                        case kParamScHfType:        pScHfType   = value; break;
-                        case kParamScHfFreq:        pScHfFreq   = value; break;
-                        case kParamScHfGain:        pScHfGain   = value; break;
-                        case kParamScListen:        pScListen   = (value > 0.5); break;
-                        case kParamType:            pType       = value; break;
-                        case kParamAttack:          pAttack     = value; break;
-                        case kParamRelease:         pRelease    = value; break;
-                        case kParamLookaheadEnable: pLookaheadEnable = (value > 0.5); break;
-                        case kParamThreshold:       pThreshold  = value; break;
-                        case kParamRatio:           pRatio      = value; break;
-                        case kParamKnee:            pKnee       = value; break;
-                        case kParamMakeup:          pMakeup     = value; break;
-                        case kParamMix:             pMix        = value; break;
-                        case kParamInput:           pInput      = value; break;
-                        case kParamOutput:          pOutput     = value; break;
-                        case kParamSoftBypass:      pSoftBypass = (value > 0.5); break;
+                        case kParamScLfIn:            pScLfIn     = (value > 0.5); break;
+                        case kParamScLfType:          pScLfType   = value; break;
+                        case kParamScLfFreq:          pScLfFreq   = value; break;
+                        case kParamScLfGain:          pScLfGain   = value; break;
+                        case kParamScHfIn:            pScHfIn     = (value > 0.5); break;
+                        case kParamScHfType:          pScHfType   = value; break;
+                        case kParamScHfFreq:          pScHfFreq   = value; break;
+                        case kParamScHfGain:          pScHfGain   = value; break;
+                        case kParamScListen:          pScListen   = (value > 0.5); break;
+                        case kParamDetectorType:      pDType      = value; break;
+                        case kParamSidechainTopology: pSCTopology = value; break;
+                        case kParamAttack:            pAttack     = value; break;
+                        case kParamRelease:           pRelease    = value; break;
+                        case kParamLookaheadEnable:   pLookaheadEnable = (value > 0.5); break;
+                        case kParamThreshold:         pThreshold  = value; break;
+                        case kParamRatio:             pRatio      = value; break;
+                        case kParamKnee:              pKnee       = value; break;
+                        case kParamMakeup:            pMakeup     = value; break;
+                        case kParamMix:               pMix        = value; break;
+                        case kParamInput:             pInput      = value; break;
+                        case kParamOutput:            pOutput     = value; break;
+                        case kParamSoftBypass:        pSoftBypass = (value > 0.5); break;
                         default: break;
                     }
                     call_after_parameter_changed ();
@@ -221,26 +220,15 @@ tresult PLUGIN_API RLFCMP_Processor::setupProcessing (Vst::ProcessSetup& newSetu
     else if (projectSR > 48000.0) internalSR = projectSR * 2.0;
     else                          internalSR = projectSR * 4.0;
     
-    Vst::SpeakerArrangement arr;
-    getBusArrangement (Steinberg::Vst::BusDirections::kOutput, 0, arr);
-    auto numChannels = Vst::SpeakerArr::getChannelCount (arr);
     lookaheadSize = std::min((int)(0.5 * 0.001 * newSetup.sampleRate), maxLAH); // fixed lookahead at 0.5ms
-    halfTap = lookaheadSize / 2;
-    condition = lookaheadSize % 2;
+    halfTap       = lookaheadSize / 2;
+    condition     = lookaheadSize % 2;
     
-    lookAheadDelayLine.resize(numChannels);
     for (auto& iter : lookAheadDelayLine)
-    {
-        iter = new std::deque<double>;
-        iter->resize(maxLAH);
-    }
+        iter.resize(maxLAH);
     
-    latencyDelayLine.resize(numChannels);
     for (auto& iter : latencyDelayLine)
-    {
-        iter = new std::deque<double>;
-        iter->resize(maxLAH);
-    }
+        iter.resize(maxLAH);
 
     Kaiser::calcFilter2(lookaheadSize, 3.0, LAH_coef); // ((alpha * pi)/0.1102) + 8.7, alpha == 3 -> -94.22 dB
     
@@ -373,50 +361,33 @@ void RLFCMP_Processor::processAudio(
     ParamValue maxOutputPeak[2] = {0.0, };
     ParamValue maxOutputRMS[2] = {0.0, };
     
+    double sqrtDtrAtkCoef = sqrt(dtrAtkCoef);
+    double powrDtrRlsCoef = dtrRlsCoef * dtrRlsCoef;
+    double sqrtAtkCoef = sqrt(atkCoef);
+    double powrRlsCoef = rlsCoef * rlsCoef;
+    
+    // Process ===========================================================
     while (sampleFrames > sample)
     {
         double sideChain[2] = {0.0, 0.0};
-        double HT_dtct[2] = {0.0, 0.0};
-        double sqared[2]  = {0.0, 0.0};
-        double rectified[2]  = {0.0, 0.0};
+        double HT_dtct[2]   = {0.0, 0.0};
+        double squared[2]   = {0.0, 0.0};
+        double rectified[2] = {0.0, 0.0};
         
         for (int32 channel = 0; channel < numChannels; channel++)
         {
             Vst::Sample64 inputSample = inputs[channel][sample];
-            
-            /*
-             input gain
-             optional gain stage for headroom
-             */
+
             inputSample *= input;
             
-            /*
-             Sidechain Filter - BS1770 filter
-             
-             It simulates how human ear percives sound.
-             It helps compressor to behave more natual (to human ear).
-             */
+            // SideChain Filtering ===========================================================
             sideChain[channel] = SC_LF[channel].computeSVF(inputSample);
             sideChain[channel] = SC_HF[channel].computeSVF(sideChain[channel]);
-            
-            /*
-             Hilbert Detector
-             
-             It consists of two paths with 90 degree phase difference.
-             We can say these two paths now have a sin <-> cos relation in Real-Imaginary plane
-             So if both paths are squared and added, it becomes a perfect envelope of original signal.
-             
-             Idealy, 90 degree phase shift of Square wave is going inf.
-             However the digital method of generating two path with 90 degree phase difference is by
-             generating two NEW path with 90 degree by phase all pass filters,
-             not Original and Phase-shifted path.
-             So, both paths are not going crazy at square input.
-             
-             One thing to know, is that square wave going through allpass filter does change shape of square.
-             */
-            for (int path = 0; path < path_num; path++) // two paths for 0 and +90
+
+            // Hilbert detector ===========================================================
+            for (int path = 0; path < path_num; path++)
             {
-                double nextInput = sideChain[channel]; // spits weird values if abs or squaring input
+                double nextInput = sideChain[channel];
                 for (int stage = 0; stage < HT_stage; stage++)
                 {
                     double ret = HT_coefs[path][stage] * (nextInput + HT_state[channel][path][io_y][y2][stage]) - HT_state[channel][path][io_x][x2][stage];
@@ -430,23 +401,49 @@ void RLFCMP_Processor::processAudio(
             double rms_s   = HT_state[channel][path_ref][io_y][y2][HT_stage - 1];
             double rms_c   = HT_state[channel][path_sft][io_y][y1][HT_stage - 1];
             HT_dtct[channel] = rms_s * rms_s + rms_c * rms_c; // Ideal input level, squared
-            sqared[channel] = sideChain[channel] * sideChain[channel]; // input squared
-            rectified[channel] = std::abs(sideChain[channel]);
+            {
+                double vin = HT_dtct[channel];
+                double g = sqrt(getTau(0.1, SampleRate));
+                hilbert_state[channel] = g * hilbert_state[channel] + (1.0 - g) * vin;
+                HT_dtct[channel] = hilbert_state[channel];
+            }
+            
+            {
+                // Full wave rectifier ===========================================================
+                double vin = std::abs(sideChain[channel]);
+                double delta = vin - rectified_state[channel];
+                double pp = (delta > 0) ? 1.0 : 0.0; // smooth::Logistics(delta, k_detector); // (delta > 0) ? 1.0 : 0.0;
+                double nn = 1.0 - pp;
+                double g = (pp * dtrAtkCoef + nn * dtrRlsCoef);
+                rectified_state[channel] = g * rectified_state[channel] + (1.0 - g) * vin;
+                rectified[channel] = rectified_state[channel];
+            }
+            {
+                // Square wave rectifier ===========================================================
+                double vin = sideChain[channel] * sideChain[channel];
+                double delta = vin - squared_state[channel];
+                double pp = (delta > 0) ? 1.0 : 0.0; // smooth::Logistics(delta, k_detector*k_detector); // (delta > 0) ? 1.0 : 0.0;
+                double nn = 1.0 - pp;
+                double g = (pp * sqrtDtrAtkCoef + nn * powrDtrRlsCoef);
+                squared_state[channel] = g * squared_state[channel] + (1.0 - g) * vin;
+                squared[channel] = squared_state[channel];
+            }
         }
         
+        // Link stereo ===========================================================
         double boldMonoSample   = 0.0;
         double smoothMonoSample = 0.0;
         double cleanMonoSample  = 0.0;
         for (int32 channel = 0; channel < numChannels; channel++)
         {
             boldMonoSample   += invNumChannels * rectified[channel];
-            smoothMonoSample += invNumChannels * sqared[channel];
+            smoothMonoSample += invNumChannels * squared[channel];
             cleanMonoSample  += invNumChannels * HT_dtct[channel];
         }
         for (int32 channel = 0; channel < numChannels; channel++)
         {
             rectified[channel] = boldMonoSample;
-            sqared[channel]    = smoothMonoSample;
+            squared[channel]   = smoothMonoSample;
             HT_dtct[channel]   = cleanMonoSample;
         }
         
@@ -456,141 +453,185 @@ void RLFCMP_Processor::processAudio(
             inputSample *= input;
             
             double inputPeak = VuInputPeak[channel].processSample(inputSample);
-            double inputRMS = VuInputRMS[channel].processSample(inputSample);
+            double inputRMS  = VuInputRMS[channel].processSample(inputSample);
             if(maxInputPeak[channel] < inputPeak) maxInputPeak[channel] = inputPeak;
             if(maxInputRMS[channel]  < inputRMS ) maxInputRMS[channel]  = inputRMS;
             
-            /*
-             Envelope Detector
-             
-             Envelop(Level) Detector consists of Rectifier + Capacitor.
-             Capacitor is the Leaky integrator, converting AC to DC by reducing the ripple.
-             Attack and Release are then applied with RC circuit after this Detector.
-             
-             I wanted to use [ ZDF == TPT == Trapezoidal integration ] one pole filter for enevelope follower,
-             but it drops to -inf at nyquist, changing harmonic response of compressor.
-             So I had to use naive implementation of one pole filter.
-             correct way would be oversampling by x4 it with TPT, but I'm aiming for a Zero-latency for realtime use.
-             Maybe, MZTi kernal with very small size might work, too.
-             It kinda looks like high shelf, but changes center freq and gain dB continuously.
-             */
-            
-            /*
-             What I want to do - ADAA to rectifier and coefficient switching
-             
-             "sqared = sideChain * sideChain" is a non-linear func and ADAA can be applied.
-             Also, standard if-else is massive aliasing algo, Logistics function is little less, but not perfect.
-             
-             AA-IIR compensated will work good, but I havn't done math so long, I forgot ALL.
-             
-             Antiderivative Antialiasing with Frequency Compensation for Stateful Systems
-             https://www.dafx.de/paper-archive/2022/papers/DAFx20in22_paper_4.pdf
-             */
-            
-            /*
-             Question is, typical compressors have effective threshold to be inconsistant by time constants.
-             The only compressor that I know works consistantly is Sonnox Oxford Dynamics by Paul Frindle.
-             suggestion is that this is done by two-stage detector, like analog compressors.
-             first stage acts as zero-attack moderate-release, and second stage sets actual attack/release.
-             */
-            
-            double env = 0.0;
-            
-            switch (type) {
-                case detectorType::Bold :
-                {
-                    double vin = rectified[channel];
-                    // fast detector, plain rms
-                    double delta = vin - detector_state[channel];
-                    double pp = smooth::Logistics(delta, k_rms); // (delta > 0) ? 1.0 : 0.0;
-                    double nn = 1.0 - pp;
-                    double g = (pp * atkCoef + nn * rlsCoef);
-                    detector_state[channel] = g * detector_state[channel] + (1.0 - g) * vin;
-                    env = (detector_state[channel]);
-                }
-                    break;
-                    
-                case detectorType::Smooth :
-                {
-                    double vin = sqared[channel];
-                    // fast detector, plain rms
-                    double delta = vin - detector_state[channel];
-                    double pp = smooth::Logistics(delta, k_rms); // (delta > 0) ? 1.0 : 0.0;
-                    double nn = 1.0 - pp;
-                    double g = (pp * sqrt(atkCoef) + nn * (rlsCoef * rlsCoef));
-                    detector_state[channel] = g * detector_state[channel] + (1.0 - g) * vin;
-                    env = sqrt(detector_state[channel]);
-                }
-                    break;
-                    
-                case detectorType::Clean :
-                {
-                    double vin = HT_dtct[channel];
-                    // slow detector, Hilbert
-                    double delta = vin - detector_state[channel];
-                    double pp = smooth::Logistics(delta, k_HT); // (delta > 0) ? 1.0 : 0.0;
-                    double nn = 1.0 - pp;
-                    double g = (pp * sqrt(atkCoef) + nn * (rlsCoef * rlsCoef));
-                    detector_state[channel] = g * detector_state[channel] + (1.0 - g) * vin;
-                    env = sqrt(detector_state[channel]);
-                }
-                    break;
-                    
-                default:
-                {
-                    double vin = HT_dtct[channel];
-                    // slow detector, Hilbert
-                    double delta = vin - detector_state[channel];
-                    double pp = smooth::Logistics(delta, k_HT); // (delta > 0) ? 1.0 : 0.0;
-                    double nn = 1.0 - pp;
-                    double g = (pp * sqrt(atkCoef) + nn * (rlsCoef * rlsCoef));
-                    detector_state[channel] = g * detector_state[channel] + (1.0 - g) * vin;
-                    env = sqrt(detector_state[channel]);
-                }
-                    break;
-            }
-            
-            env = DecibelConverter::ToDecibel(env);
-            
-            double overshoot = env - (threshold);
-            
-            double gain = 1.0;
-            
-            if (overshoot <= -kneeHalf)
-                gain = 0.0;
-            else if (overshoot > -kneeHalf && overshoot <= kneeHalf)
-                gain = 0.5 * slope * ((overshoot + kneeHalf) * (overshoot + kneeHalf)) / knee;
-            else
-                gain = slope * overshoot;
-            
-            /*
-             Look-ahead with FIR smoothing
-             
-             'proper' way, some say, to implement lookahead.
-             Kaiser window for best harmonic rejection at low tap size(0.5ms, 24 taps at 48000)
-             
-             Also, transform_reduce is literally convolution.
-             It's faster then naive or symmetrical implementation.
-             Manual SIMD might be better, but not bothered and quite happy with this.
-             
-             Pro-C 2 uses A-symmetrical shape. does it help?
-             */
-            if (pLookaheadEnable)
+            if (scTopology == ScTopologyLin)
             {
-                lookAheadDelayLine[channel]->push_back(gain);
-                gain = std::transform_reduce(lookAheadDelayLine[channel]->end() - lookAhead_local, lookAheadDelayLine[channel]->end(), LAH_coef, 0.0);
-                lookAheadDelayLine[channel]->pop_front();
+                // Envelope Detection ===========================================================
+                double env = 0.0;
+                switch (dType) {
+                    case detectorType::Bold :
+                    {
+                        double vin = rectified[channel];
+                        double delta = vin - detector_state[channel];
+                        double pp = smooth::Logistics(delta, k_rms); // (delta > 0) ? 1.0 : 0.0;
+                        double nn = 1.0 - pp;
+                        double g = (pp * sqrtAtkCoef + nn * powrRlsCoef);
+                        detector_state[channel] = g * detector_state[channel] + (1.0 - g) * vin;
+                        env = (detector_state[channel]);
+                    }
+                        break;
+                        
+                    case detectorType::Smooth :
+                    {
+                        double vin = squared[channel];
+                        double delta = vin - detector_state[channel];
+                        double pp = smooth::Logistics(delta, k_rms); // (delta > 0) ? 1.0 : 0.0;
+                        double nn = 1.0 - pp;
+                        double g = (pp * sqrtAtkCoef + nn * powrRlsCoef);
+                        detector_state[channel] = g * detector_state[channel] + (1.0 - g) * vin;
+                        env = sqrt(detector_state[channel]);
+                    }
+                        break;
+                        
+                    case detectorType::Clean :
+                    {
+                        double vin = HT_dtct[channel];
+                        double delta = vin - detector_state[channel];
+                        double pp = smooth::Logistics(delta, k_HT); // (delta > 0) ? 1.0 : 0.0;
+                        double nn = 1.0 - pp;
+                        double g = (pp * sqrtAtkCoef + nn * powrRlsCoef);
+                        detector_state[channel] = g * detector_state[channel] + (1.0 - g) * vin;
+                        env = sqrt(detector_state[channel]);
+                    }
+                        break;
+                        
+                    default:
+                    {
+                        double vin = HT_dtct[channel];
+                        // slow detector, Hilbert
+                        double delta = vin - detector_state[channel];
+                        double pp = smooth::Logistics(delta, k_HT); // (delta > 0) ? 1.0 : 0.0;
+                        double nn = 1.0 - pp;
+                        double g = (pp * sqrtAtkCoef + nn * powrRlsCoef);
+                        detector_state[channel] = g * detector_state[channel] + (1.0 - g) * vin;
+                        env = sqrt(detector_state[channel]);
+                    }
+                        break;
+                }
+                
+                // Transfer Curve ===========================================================
+                double env = DecibelConverter::ToDecibel(inputSample);
+                
+                double overshoot = env - (threshold);
+                
+                double gain = 1.0;
+                
+                if (overshoot <= -kneeHalf)
+                    gain = 0.0;
+                else if (overshoot > -kneeHalf && overshoot <= kneeHalf)
+                    gain = 0.5 * slope * ((overshoot + kneeHalf) * (overshoot + kneeHalf)) / knee;
+                else
+                    gain = slope * overshoot;
+                
+                // Look-ahead FIR ===========================================================
+                if (pLookaheadEnable)
+                {
+                    lookAheadDelayLine[channel].push_back(gain);
+                    gain = std::transform_reduce(lookAheadDelayLine[channel].end() - lookAhead_local, lookAheadDelayLine[channel].end(), LAH_coef, 0.0);
+                    lookAheadDelayLine[channel].pop_front();
+                }
+                else
+                {
+                    lookAheadDelayLine[channel].push_back(gain);
+                    gain = *(lookAheadDelayLine[channel].end() - lookAhead_local);
+                    lookAheadDelayLine[channel].pop_front();
+                }
+                
+                if (gain < GR_Max) GR_Max = gain;
+                gain = DecibelConverter::ToGain(gain);
             }
             else
             {
-                lookAheadDelayLine[channel]->push_back(gain);
-                gain = *(lookAheadDelayLine[channel]->end() - lookAhead_local);
-                lookAheadDelayLine[channel]->pop_front();
+                // Transfer Curve ===========================================================
+                env = DecibelConverter::ToDecibel(env);
+                
+                double overshoot = env - (threshold);
+                
+                double gain = 1.0;
+                
+                if (overshoot <= -kneeHalf)
+                    gain = 0.0;
+                else if (overshoot > -kneeHalf && overshoot <= kneeHalf)
+                    gain = 0.5 * slope * ((overshoot + kneeHalf) * (overshoot + kneeHalf)) / knee;
+                else
+                    gain = slope * overshoot;
+                
+                // Envelope Detection ===========================================================
+                double env = 0.0;
+                switch (dType) {
+                    case detectorType::Bold :
+                    {
+                        double vin = rectified[channel];
+                        double delta = vin - detector_state[channel];
+                        double pp = smooth::Logistics(delta, k_rms); // (delta > 0) ? 1.0 : 0.0;
+                        double nn = 1.0 - pp;
+                        double g = (pp * sqrtAtkCoef + nn * powrRlsCoef);
+                        detector_state[channel] = g * detector_state[channel] + (1.0 - g) * vin;
+                        env = (detector_state[channel]);
+                    }
+                        break;
+                        
+                    case detectorType::Smooth :
+                    {
+                        double vin = squared[channel];
+                        double delta = vin - detector_state[channel];
+                        double pp = smooth::Logistics(delta, k_rms); // (delta > 0) ? 1.0 : 0.0;
+                        double nn = 1.0 - pp;
+                        double g = (pp * sqrtAtkCoef + nn * powrRlsCoef);
+                        detector_state[channel] = g * detector_state[channel] + (1.0 - g) * vin;
+                        env = sqrt(detector_state[channel]);
+                    }
+                        break;
+                        
+                    case detectorType::Clean :
+                    {
+                        double vin = HT_dtct[channel];
+                        double delta = vin - detector_state[channel];
+                        double pp = smooth::Logistics(delta, k_HT); // (delta > 0) ? 1.0 : 0.0;
+                        double nn = 1.0 - pp;
+                        double g = (pp * sqrtAtkCoef + nn * powrRlsCoef);
+                        detector_state[channel] = g * detector_state[channel] + (1.0 - g) * vin;
+                        env = sqrt(detector_state[channel]);
+                    }
+                        break;
+                        
+                    default:
+                    {
+                        double vin = HT_dtct[channel];
+                        // slow detector, Hilbert
+                        double delta = vin - detector_state[channel];
+                        double pp = smooth::Logistics(delta, k_HT); // (delta > 0) ? 1.0 : 0.0;
+                        double nn = 1.0 - pp;
+                        double g = (pp * sqrtAtkCoef + nn * powrRlsCoef);
+                        detector_state[channel] = g * detector_state[channel] + (1.0 - g) * vin;
+                        env = sqrt(detector_state[channel]);
+                    }
+                        break;
+                }
+                
+                
+                
+                // Look-ahead FIR ===========================================================
+                if (pLookaheadEnable)
+                {
+                    lookAheadDelayLine[channel].push_back(gain);
+                    gain = std::transform_reduce(lookAheadDelayLine[channel].end() - lookAhead_local, lookAheadDelayLine[channel].end(), LAH_coef, 0.0);
+                    lookAheadDelayLine[channel].pop_front();
+                }
+                else
+                {
+                    lookAheadDelayLine[channel].push_back(gain);
+                    gain = *(lookAheadDelayLine[channel].end() - lookAhead_local);
+                    lookAheadDelayLine[channel].pop_front();
+                }
+                
+                if (gain < GR_Max) GR_Max = gain;
+                gain = DecibelConverter::ToGain(gain);
             }
-            
-            if (gain < GR_Max) GR_Max = gain;
-            gain = DecibelConverter::ToGain(gain);
-            
+                
             if (pScListen)
             {
                 inputSample = sideChain[channel];
@@ -598,11 +639,9 @@ void RLFCMP_Processor::processAudio(
                 makeup = 1.0;
             }
 
-            // latencyDelayLine[channel]->pushSample(inputSample);
-            // inputSample = latencyDelayLine[channel]->getSample(lookAhead_local);
-            latencyDelayLine[channel]->push_back(inputSample);
-            inputSample = *(latencyDelayLine[channel]->end() - lookAhead_local);
-            latencyDelayLine[channel]->pop_front();
+            latencyDelayLine[channel].push_back(inputSample);
+            inputSample = *(latencyDelayLine[channel].end() - lookAhead_local);
+            latencyDelayLine[channel].pop_front();
 
             double dry = inputSample;
             
@@ -619,31 +658,38 @@ void RLFCMP_Processor::processAudio(
             if(maxOutputPeak[channel] < outputPeak) maxOutputPeak[channel] = outputPeak;
             if(maxOutputRMS[channel]  < outputRMS ) maxOutputRMS[channel]  = outputRMS;
             
+            // if (channel == 0) inputSample = (rectified[channel]);
+            // if (channel == 1) inputSample = (sqrt(squared[channel]));
+            // if (channel == 0) inputSample = rectified[channel];
+            // if (channel == 1) inputSample = sqrt(HT_dtct[channel]);
+            
             outputs[channel][sample] = (SampleType)(inputSample);
         }
         sample++;
     }
     if (numChannels == 1)
     {
-        fInputVuPeak[0] = DecibelConverter::ToDecibel(maxInputPeak[0]);
-        fInputVuRMS[0] = DecibelConverter::ToDecibel(maxInputRMS[0]);
+        fInputVuPeak [0] = DecibelConverter::ToDecibel(maxInputPeak [0]);
         fOutputVuPeak[0] = DecibelConverter::ToDecibel(maxOutputPeak[0]);
-        fOutputVuRMS[0] = DecibelConverter::ToDecibel(maxOutputRMS[0]);
-        fInputVuPeak[1] = fInputVuPeak[0];
-        fInputVuRMS[1] = fInputVuRMS[0];
+        fInputVuRMS  [0] = DecibelConverter::ToDecibel(maxInputRMS  [0]);
+        fOutputVuRMS [0] = DecibelConverter::ToDecibel(maxOutputRMS [0]);
+        
+        fInputVuPeak [1] = fInputVuPeak [0];
         fOutputVuPeak[1] = fOutputVuPeak[0];
-        fOutputVuRMS[1] = fOutputVuRMS[0];
+        fInputVuRMS  [1] = fInputVuRMS  [0];
+        fOutputVuRMS [1] = fOutputVuRMS [0];
     }
     else
     {
-        fInputVuPeak[0] = DecibelConverter::ToDecibel(maxInputPeak[0]);
-        fInputVuRMS[0] = DecibelConverter::ToDecibel(maxInputRMS[0]);
+        fInputVuPeak [0] = DecibelConverter::ToDecibel(maxInputPeak [0]);
         fOutputVuPeak[0] = DecibelConverter::ToDecibel(maxOutputPeak[0]);
-        fOutputVuRMS[0] = DecibelConverter::ToDecibel(maxOutputRMS[0]);
-        fInputVuPeak[1] = DecibelConverter::ToDecibel(maxInputPeak[1]);
-        fInputVuRMS[1] = DecibelConverter::ToDecibel(maxInputRMS[1]);
+        fInputVuRMS  [0] = DecibelConverter::ToDecibel(maxInputRMS  [0]);
+        fOutputVuRMS [0] = DecibelConverter::ToDecibel(maxOutputRMS [0]);
+        
+        fInputVuPeak [1] = DecibelConverter::ToDecibel(maxInputPeak [1]);
         fOutputVuPeak[1] = DecibelConverter::ToDecibel(maxOutputPeak[1]);
-        fOutputVuRMS[1] = DecibelConverter::ToDecibel(maxOutputRMS[1]);
+        fInputVuRMS  [1] = DecibelConverter::ToDecibel(maxInputRMS  [1]);
+        fOutputVuRMS [1] = DecibelConverter::ToDecibel(maxOutputRMS [1]);
     }
     fGainReduction = GR_Max;
     return;
@@ -652,10 +698,13 @@ void RLFCMP_Processor::processAudio(
 
 void RLFCMP_Processor::call_after_SR_changed ()
 {
+    dtrAtkCoef  = getTau(detectorAtk,  projectSR);
+    dtrRlsCoef  = getTau(detectorRls,  projectSR);
+    
     atkCoef    = getTau(paramAttack. ToPlain(pAttack),  projectSR);
     rlsCoef    = getTau(paramRelease.ToPlain(pRelease), projectSR);
     
-    for (int32 channel = 0; channel < 2; channel++)
+    for (int32 channel = 0; channel < maxChannel; channel++)
     {
         SC_LF[channel].setSVF(pScLfIn, paramScLfFreq.ToPlain(pScLfFreq), paramScLfGain.ToPlain(pScLfGain), paramScLfType.ToPlainList(pScLfType), projectSR);
         SC_HF[channel].setSVF(pScHfIn, paramScHfFreq.ToPlain(pScHfType), paramScHfGain.ToPlain(pScHfGain), paramScHfType.ToPlainList(pScHfType), projectSR);
@@ -675,7 +724,7 @@ void RLFCMP_Processor::call_after_SR_changed ()
     for (int i = 0, j = 0; i < HT_order; i += 2)
         HT_coefs[path_sft][j++] = coefs[i];
     
-    for (int32 channel = 0; channel < 2; channel++)
+    for (int32 channel = 0; channel < maxChannel; channel++)
     {
         VuInputRMS[channel].prepare(projectSR);
         VuOutputRMS[channel].prepare(projectSR);
@@ -687,12 +736,13 @@ void RLFCMP_Processor::call_after_SR_changed ()
 
 void RLFCMP_Processor::call_after_parameter_changed ()
 {
-    type        = paramType.ToPlainList(pType);
+    dType      = paramDetectorType.ToPlainList(pDType);
+    scTopology = paramSidechainTopology.ToPlainList(pSCTopology);
     
     atkCoef    = getTau(paramAttack. ToPlain(pAttack),  projectSR);
     rlsCoef    = getTau(paramRelease.ToPlain(pRelease), projectSR);
     
-    for (int32 channel = 0; channel < 2; channel++)
+    for (int32 channel = 0; channel < maxChannel; channel++)
     {
         SC_LF[channel].setSVF(pScLfIn, paramScLfFreq.ToPlain(pScLfFreq), paramScLfGain.ToPlain(pScLfGain), paramScLfType.ToPlainList(pScLfType), projectSR);
         SC_HF[channel].setSVF(pScHfIn, paramScHfFreq.ToPlain(pScHfFreq), paramScHfGain.ToPlain(pScHfGain), paramScHfType.ToPlainList(pScHfType), projectSR);
@@ -712,6 +762,64 @@ void RLFCMP_Processor::call_after_parameter_changed ()
 
 //------------------------------------------------------------------------
 } // namespace yg331
+
+
+
+/*
+ Hilbert Detector
+ 
+ It consists of two paths with 90 degree phase difference.
+ We can say these two paths now have a sin <-> cos relation in Real-Imaginary plane
+ So if both paths are squared and added, it becomes a perfect envelope of original signal.
+ 
+ Idealy, 90 degree phase shift of Square wave is going inf.
+ However the digital method of generating two path with 90 degree phase difference is by
+ generating two NEW path with 90 degree by phase all pass filters,
+ not Original and Phase-shifted path.
+ So, both paths are not going crazy at square input.
+ 
+ One thing to know, is that square wave going through allpass filter does change shape of square.
+ */
+/*
+ Envelope Detector
+ 
+ Envelop(Level) Detector consists of Rectifier + Capacitor.
+ Capacitor is the Leaky integrator, converting AC to DC by reducing the ripple.
+ Attack and Release are then applied with RC circuit after this Detector.
+ 
+ I wanted to use [ ZDF == TPT == Trapezoidal integration ] one pole filter for enevelope follower,
+ but it drops to -inf at nyquist, changing harmonic response of compressor.
+ So I had to use naive implementation of one pole filter.
+ correct way would be oversampling by x4 it with TPT, but I'm aiming for a near-zero-latency for realtime use.
+ Maybe, MZTi kernal with very small size might work, too.
+ It kinda looks like high shelf, but changes center freq and gain dB continuously.
+ */
+
+/*
+ What I want to do - ADAA to rectifier and coefficient switching
+ 
+ "sqared = sideChain * sideChain" is a non-linear func and ADAA can be applied.
+ Also, standard if-else is massive aliasing algo, Logistics function is little less, but not perfect.
+ 
+ AA-IIR compensated will work good, but I havn't done math so long, I forgot ALL.
+ 
+ Antiderivative Antialiasing with Frequency Compensation for Stateful Systems
+ https://www.dafx.de/paper-archive/2022/papers/DAFx20in22_paper_4.pdf
+ */
+/*
+ Look-ahead with FIR smoothing
+ 
+ 'proper' way, some say, to implement lookahead.
+ Kaiser window for best harmonic rejection at low tap size(0.5ms, 24 taps at 48000)
+ 
+ Also, transform_reduce is literally convolution.
+ It's faster then naive or symmetrical implementation.
+ Manual SIMD might be better, but not bothered and quite happy with this.
+ 
+ Pro-C 2 uses A-symmetrical shape. does it help?
+ */
+
+
 
 /*
  

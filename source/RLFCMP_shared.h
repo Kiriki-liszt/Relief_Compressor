@@ -41,6 +41,8 @@ enum detectorType
     detectorNum = 2
 };
 
+static constexpr int ScTopologyLin = 0;
+static constexpr int ScTopologyLog = 1;
 
 //------------------------------------------------------------------------
 //  Class for converter
@@ -384,7 +386,8 @@ static constexpr ParamValue dftSoftBypass      = 0.0;
 static constexpr ParamValue dftLookaheadEnable = 1.0;
 static constexpr ParamValue dftScLfIn          = 1.0;
 static constexpr ParamValue dftScHfIn          = 1.0;
-static constexpr ParamValue dftType            = detectorType::Smooth;
+static constexpr ParamValue dftDetectorType    = detectorType::Smooth;
+static constexpr ParamValue dftSidechainTopology = ScTopologyLin;
 
 static constexpr ParamValue minScLfFreq  = 20.0;
 static constexpr ParamValue maxScLfFreq  = 18000.0;
@@ -438,22 +441,23 @@ static constexpr ParamValue minOutput    = -12.0;
 static constexpr ParamValue maxOutput    = 12.0;
 static constexpr ParamValue dftOutput    = 0.0;
 
-static const ParameterConverter paramScLfType (0,  0,  ParameterConverter::paramType::list, PassShelfFilter::tNum);
-static const ParameterConverter paramScLfFreq (minScLfFreq,  maxScLfFreq,  ParameterConverter::paramType::log);
-static const ParameterConverter paramScLfGain (minScLfGain,  maxScLfGain,  ParameterConverter::paramType::range);
-static const ParameterConverter paramScHfType (0,  0,  ParameterConverter::paramType::list, PassShelfFilter::tNum);
-static const ParameterConverter paramScHfFreq (minScHfFreq,  maxScHfFreq,  ParameterConverter::paramType::log);
-static const ParameterConverter paramScHfGain (minScHfGain,  maxScHfGain,  ParameterConverter::paramType::range);
-static const ParameterConverter paramType     (0,  0,  ParameterConverter::paramType::list, detectorType::detectorNum);
-static const ParameterConverter paramAttack   (minAttack,    maxAttack,    ParameterConverter::paramType::log);
-static const ParameterConverter paramRelease  (minRelease,   maxRelease,   ParameterConverter::paramType::log);
-static const ParameterConverter paramThreshold(minThreshold, maxThreshold, ParameterConverter::paramType::range);
-static const ParameterConverter paramRatio    (minRatio,     maxRatio,     ParameterConverter::paramType::range);
-static const ParameterConverter paramKnee     (minKnee,      maxKnee,      ParameterConverter::paramType::range);
-static const ParameterConverter paramMakeup   (minMakeup,    maxMakeup,    ParameterConverter::paramType::range);
-static const ParameterConverter paramMix      (minMix,       maxMix,       ParameterConverter::paramType::range);
-static const ParameterConverter paramInput    (minInput,     maxInput,     ParameterConverter::paramType::range);
-static const ParameterConverter paramOutput   (minOutput,    maxOutput,    ParameterConverter::paramType::range);
+static const ParameterConverter paramScLfType     (0,  0,  ParameterConverter::paramType::list, PassShelfFilter::tNum);
+static const ParameterConverter paramScLfFreq     (minScLfFreq,  maxScLfFreq,  ParameterConverter::paramType::log);
+static const ParameterConverter paramScLfGain     (minScLfGain,  maxScLfGain,  ParameterConverter::paramType::range);
+static const ParameterConverter paramScHfType     (0,  0,  ParameterConverter::paramType::list, PassShelfFilter::tNum);
+static const ParameterConverter paramScHfFreq     (minScHfFreq,  maxScHfFreq,  ParameterConverter::paramType::log);
+static const ParameterConverter paramScHfGain     (minScHfGain,  maxScHfGain,  ParameterConverter::paramType::range);
+static const ParameterConverter paramDetectorType (0,  0,  ParameterConverter::paramType::list, detectorType::detectorNum);
+static const ParameterConverter paramSidechainTopology (0,  0,  ParameterConverter::paramType::list, ScTopologyLog);
+static const ParameterConverter paramAttack       (minAttack,    maxAttack,    ParameterConverter::paramType::log);
+static const ParameterConverter paramRelease      (minRelease,   maxRelease,   ParameterConverter::paramType::log);
+static const ParameterConverter paramThreshold    (minThreshold, maxThreshold, ParameterConverter::paramType::range);
+static const ParameterConverter paramRatio        (minRatio,     maxRatio,     ParameterConverter::paramType::range);
+static const ParameterConverter paramKnee         (minKnee,      maxKnee,      ParameterConverter::paramType::range);
+static const ParameterConverter paramMakeup       (minMakeup,    maxMakeup,    ParameterConverter::paramType::range);
+static const ParameterConverter paramMix          (minMix,       maxMix,       ParameterConverter::paramType::range);
+static const ParameterConverter paramInput        (minInput,     maxInput,     ParameterConverter::paramType::range);
+static const ParameterConverter paramOutput       (minOutput,    maxOutput,    ParameterConverter::paramType::range);
 
 static constexpr ParamValue PF_FREQ  = 1500.0;
 static constexpr ParamValue PF_Q     = M_SQRT1_2; // == 1.0 ~= 1.007
