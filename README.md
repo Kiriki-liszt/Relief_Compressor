@@ -12,22 +12,71 @@ Comes in three type - Bold, Smooth, Clean.
 LookAhead about 0.4ms.  
 It uses FIR as smoother described in Waves Audio patent(US6535846B1, Expired).  
 
-| SampleRate[Hz] | LookAhead[smpl] |
-|:--------------:|:---------------:|
-|      44100     |        16       |
-|      48000     |        18       |
-|      88200     |        34       |
-|      96000     |        38       |
-|     192000     |        78       |
-|     384000     |       158       |
+## Types of Detectors  
+
+### Bold  
+
+It's a typical Peak detector.  
+
+- Metric Halo ChannelStrip MIO compressor
+- Weiss DS1-MK3 (yes, it is)
+- Sononx Oxford Dynamics
+- bx SSL, Waves SSL EV2
+- UADx SSL G Bus Compressor
+- Waves Audio R-comp
+
+### Smooth  
+
+It's a semi-true-RMS detector, using 1-pole filter.  
+A true RMS would use square-normalize-sum-sqrt.  
+
+- AMEK Mastering Compressor
+- SSL Native Bus Compressor 2
+- bx Shadow Hills Mastering Comp
+- Ozone 11 Dynamics (RMS)
+
+### Clean  
+
+It's a Hilbert detector used in RMS style.  
+It uses two path with about 90-degree phase difference.  
+If both path's signal are square-add-sqrted, it gets ideal level envelope.  
+
+- FabFilter Pro-C 2 Mastering
+- TDR Kotelvnikov RMS
+- Ozone 11 Dynamics (Peak)
+
+## Sidechain Topology  
+
+### Linear  
+
+It detects level in linear gain scale, and then calculates gain reduction.  
+Not typical, but certainly favorable.  
+
+- Weiss DS1-MK3
+- Metric Halo ChannelStrip MIO compressor
+- AMEK Mastering Compressor
+- bx SSL, Waves SSL EV2
+- bx Shadow Hills Mastering Comp
+
+### Logarithmic  
+
+It calculates gain reduction in log dB, and applies level envelope to gain reduction.  
+More common method to use.  
+
+- FabFilter Pro-C 2
+- Sonnox Oxford Dynamics
+- TDR Kotelvnikov
+- SSL Native Channel Strip 2
+- UADx SSL G Bus Comp, E Channel Strip
 
 ## Why Attack and Release affects Threshold?  
 
-It happens as ripple of detector are not controlled, but it's in sync with signal path so that ripple does not become problem.  
+It happens if ripples of detector are not controlled, but it's in sync with signal path so that ripple does not become a problem.  
 It can be solved by appling zero-attack moderate-release to rectified signal.  
 In case of 'Clean' type, it uses Hilbert transform so this ripple is non-existent.  
+However, it overshoots so it need a mild smoother.  
 
-However, it changes harmonic pattern generated from compressor.  
+Need to know is, that it changes harmonic pattern generated from compressor.  
 Reduction rate of harmonics are more steep.  
 Since I don't have a full size HW compressor(what a shame), I have to use MXR studio comp.  
 MXR studio compressor is copy of UAD 1176 LN version.  
@@ -63,12 +112,6 @@ Have to check out how other HW comprssor's harmonic pattern looks like.
 - SSL Native Bus Compressor 2
 - UADx SSL G Bus Compressor
 - and many other digital compressors
-
-## Bold type  
-
-It resembles Metric Halo Channel Strip - MIO compressor.  
-Without LookAhead, it's almost identical.  
-Attack and Release affects effective threshold.  
 
 ## Why Clean type sounds different?  
 

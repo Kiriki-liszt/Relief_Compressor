@@ -98,7 +98,7 @@ protected:
     static SMTG_CONSTEXPR double peakRMSDecay = 0.3; //sec
     
     static SMTG_CONSTEXPR double detectorAtk = 0.05; //msec
-    static SMTG_CONSTEXPR double detectorRls = 10.0; //msec
+    static SMTG_CONSTEXPR double detectorRls = 15.0; //msec
     
     // Internal datastructures ===========================================================
     PassShelfFilter SC_LF[maxChannel], SC_HF[maxChannel]; // SideChain Filters, simplified for pass and shelf, 6dB/oct 1p1z filter
@@ -106,11 +106,10 @@ protected:
     ParamValue HT_coefs[path_num][HT_stage];
     ParamValue HT_state[maxChannel][path_num][io_num][order][HT_stage] = {0, }; // 2-channel, 2-path, 2-state(x, y), 2-order(x1, x2), numCoefs-stages,
     
-    ParamValue detector_state[maxChannel]; // Leaky Integrator, naive one-pole filter, EWMA, etc
-    
-    ParamValue hilbert_state[maxChannel]; // Leaky Integrator, naive one-pole filter, EWMA, etc
-    ParamValue squared_state[maxChannel]; // Leaky Integrator, naive one-pole filter, EWMA, etc
-    ParamValue rectified_state[maxChannel]; // Leaky Integrator, naive one-pole filter, EWMA, etc
+    ParamValue hilbert_state[maxChannel];
+    ParamValue squared_state[maxChannel];
+    ParamValue rectified_state[maxChannel];
+    ParamValue envelope_state[maxChannel]; // Leaky Integrator, naive one-pole filter, EWMA, etc
 
     int32 lookaheadSize = 0;
     int32 halfTap = lookaheadSize / 2;

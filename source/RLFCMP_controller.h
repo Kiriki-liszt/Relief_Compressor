@@ -479,10 +479,10 @@ protected:
 //------------------------------------------------------------------------
 // EQCurveViewController
 //------------------------------------------------------------------------
-class EQCurveViewController
-    : public Steinberg::FObject
-    , public VSTGUI::DelegationController
-    , public VSTGUI::CBaseObject
+class EQCurveViewController :
+    public Steinberg::FObject,
+    public VSTGUI::DelegationController,
+    public VSTGUI::CBaseObject
 {
 public:
     EQCurveViewController (IController* baseController,
@@ -494,18 +494,18 @@ public:
                            Steinberg::Vst::Parameter* ParamScHfIn,
                            Steinberg::Vst::Parameter* ParamScHfType,
                            Steinberg::Vst::Parameter* ParamScHfFreq,
-                           Steinberg::Vst::Parameter* ParamScHfGain)
-        : DelegationController(baseController)
-        , mainController(_mainController)
-        , ParamScLfIn  (ParamScLfIn)
-        , ParamScLfType(ParamScLfType)
-        , ParamScLfFreq(ParamScLfFreq)
-        , ParamScLfGain(ParamScLfGain)
-        , ParamScHfIn  (ParamScHfIn)
-        , ParamScHfType(ParamScHfType)
-        , ParamScHfFreq(ParamScHfFreq)
-        , ParamScHfGain(ParamScHfGain)
-        , eqCurveView(nullptr)
+                           Steinberg::Vst::Parameter* ParamScHfGain) :
+        DelegationController(baseController),
+        mainController(_mainController),
+        ParamScLfIn  (ParamScLfIn),
+        ParamScLfType(ParamScLfType),
+        ParamScLfFreq(ParamScLfFreq),
+        ParamScLfGain(ParamScLfGain),
+        ParamScHfIn  (ParamScHfIn),
+        ParamScHfType(ParamScHfType),
+        ParamScHfFreq(ParamScHfFreq),
+        ParamScHfGain(ParamScHfGain),
+        eqCurveView(nullptr)
     {
         if (ParamScLfIn  ) ParamScLfIn  ->addDependent(this);
         if (ParamScLfType) ParamScLfType->addDependent(this);
@@ -549,7 +549,7 @@ private:
     using EQCurveView    = VSTGUI::EQCurveView;
     
     // FObject
-    void PLUGIN_API update( Steinberg::FUnknown* changedUnknown, Steinberg::int32 message) SMTG_OVERRIDE
+    void PLUGIN_API update (Steinberg::FUnknown* changedUnknown, Steinberg::int32 message) SMTG_OVERRIDE
     {
         if (eqCurveView)
         {
@@ -623,29 +623,29 @@ private:
 //------------------------------------------------------------------------
 // Transfer Curve View Controller
 //------------------------------------------------------------------------
-class TransferCurveViewController
-    : public Steinberg::FObject
-    , public VSTGUI::DelegationController
-    , public VSTGUI::CBaseObject
+class TransferCurveViewController :
+    public Steinberg::FObject,
+    public VSTGUI::DelegationController, // IControlListener + IController
+    public VSTGUI::CBaseObject
 {
 public:
     TransferCurveViewController(
         IController* baseController,
-        RLFCMP_Controller* _mainController,
+        RLFCMP_Controller* mainController,
         Steinberg::Vst::Parameter* ParamThreshold,
         Steinberg::Vst::Parameter* ParamKnee,
         Steinberg::Vst::Parameter* ParamRatio,
         Steinberg::Vst::Parameter* ParamMakeup,
         Steinberg::Vst::Parameter* ParamMix
-    )
-        : DelegationController(baseController)
-        , mainController(_mainController)
-        , ParamThreshold(ParamThreshold)
-        , ParamKnee     (ParamKnee)
-        , ParamRatio    (ParamRatio)
-        , ParamMakeup   (ParamMakeup)
-        , ParamMix      (ParamMix)
-        , transferCurveView(nullptr)
+    ) :
+        DelegationController(baseController),
+        mainController(mainController),
+        ParamThreshold(ParamThreshold),
+        ParamKnee     (ParamKnee),
+        ParamRatio    (ParamRatio),
+        ParamMakeup   (ParamMakeup),
+        ParamMix      (ParamMix),
+        transferCurveView(nullptr)
     {
         if (ParamThreshold) ParamThreshold->addDependent(this);
         if (ParamKnee     ) ParamKnee     ->addDependent(this);
@@ -741,11 +741,14 @@ private:
 //------------------------------------------------------------------------
 // VuMeterController
 //------------------------------------------------------------------------
-class VuMeterController : public VSTGUI::IController, public VSTGUI::ViewListenerAdapter
+class VuMeterController :
+    public VSTGUI::DelegationController, // IControlListener + IController
+    public VSTGUI::ViewListenerAdapter   // IViewListener
 {
 public:
-    VuMeterController(RLFCMP_Controller* _mainController) :
-        mainController(_mainController),
+    VuMeterController(IController* baseController, RLFCMP_Controller* mainController) :
+        DelegationController(baseController),
+        mainController(mainController),
         vuMeterInL(nullptr),
         vuMeterInR(nullptr),
         vuMeterOutL(nullptr),
@@ -766,7 +769,7 @@ public:
 
     void updateVuMeterValue()
     {
-        if (mainController) {
+        if (mainController != nullptr) {
             if (vuMeterInL)  vuMeterInL-> setValue(mainController->getVuMeterByTag(vuMeterInL->getTag()));
             if (vuMeterInR)  vuMeterInR-> setValue(mainController->getVuMeterByTag(vuMeterInR->getTag()));
             if (vuMeterOutL) vuMeterOutL->setValue(mainController->getVuMeterByTag(vuMeterOutL->getTag()));
@@ -792,7 +795,7 @@ private:
                       const UIAttributes&   /*attributes*/,
                       const IUIDescription* /*description*/) SMTG_OVERRIDE;
     
-    //--- from IViewListenerAdapter ----------------------
+    //--- from ViewListenerAdapter ----------------------
     //--- is called when a view will be deleted: the editor is closed -----
     void viewWillDelete(CView* view) SMTG_OVERRIDE
     {
@@ -803,12 +806,12 @@ private:
         if (dynamic_cast<MyVuMeter*>(view) == vuMeterGR   && vuMeterGR)   { vuMeterGR->  unregisterViewListener(this); vuMeterGR   = nullptr; }
     }
 
-    RLFCMP_Controller* mainController;
-    MyVuMeter* vuMeterInL;
-    MyVuMeter* vuMeterInR;
-    MyVuMeter* vuMeterOutL;
-    MyVuMeter* vuMeterOutR;
-    MyVuMeter* vuMeterGR;
+    RLFCMP_Controller* mainController = nullptr;
+    MyVuMeter* vuMeterInL = nullptr;
+    MyVuMeter* vuMeterInR = nullptr;
+    MyVuMeter* vuMeterOutL = nullptr;
+    MyVuMeter* vuMeterOutR = nullptr;
+    MyVuMeter* vuMeterGR = nullptr;
 };
 
 //------------------------------------------------------------------------

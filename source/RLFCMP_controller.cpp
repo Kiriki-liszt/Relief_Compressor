@@ -1390,12 +1390,14 @@ VSTGUI::IController* RLFCMP_Controller::createSubController (VSTGUI::UTF8StringP
                                                              const VSTGUI::IUIDescription* description,
                                                              VSTGUI::VST3Editor* editor)
 {
+    /*
     if (VSTGUI::UTF8StringView(name) == "VuMeterController")
     {
-        auto* controller = new VuMeterController(this);
+        auto* controller = new VuMeterController(editor, this);
         addUIVuMeterController(controller);
         return controller;
     }
+     */
     if (VSTGUI::UTF8StringView(name) == "eqCurveController")
     {
         Steinberg::Vst::Parameter* ScLfInParam = getParameterObject(kParamScLfIn);

@@ -241,7 +241,7 @@ tresult PLUGIN_API RLFCMP_Processor::setupProcessing (Vst::ProcessSetup& newSetu
 
 uint32  PLUGIN_API RLFCMP_Processor::getLatencySamples()
 {
-    return lookaheadSize;
+    return lookaheadSize-1;
 }
 
 //------------------------------------------------------------------------
@@ -414,7 +414,7 @@ void RLFCMP_Processor::processAudio(
                 double delta = vin - rectified_state[channel];
                 double pp = (delta > 0) ? 1.0 : 0.0; // smooth::Logistics(delta, k_detector); // (delta > 0) ? 1.0 : 0.0;
                 double nn = 1.0 - pp;
-                double g = (pp * dtrAtkCoef + nn * dtrRlsCoef);
+                double g = (pp * 0.0 + nn * dtrRlsCoef);
                 rectified_state[channel] = g * rectified_state[channel] + (1.0 - g) * vin;
                 rectified[channel] = rectified_state[channel];
             }
@@ -424,7 +424,7 @@ void RLFCMP_Processor::processAudio(
                 double delta = vin - squared_state[channel];
                 double pp = (delta > 0) ? 1.0 : 0.0; // smooth::Logistics(delta, k_detector*k_detector); // (delta > 0) ? 1.0 : 0.0;
                 double nn = 1.0 - pp;
-                double g = (pp * sqrtDtrAtkCoef + nn * powrDtrRlsCoef);
+                double g = (pp * 0.0 + nn * powrDtrRlsCoef);
                 squared_state[channel] = g * squared_state[channel] + (1.0 - g) * vin;
                 squared[channel] = squared_state[channel];
             }
@@ -455,46 +455,49 @@ void RLFCMP_Processor::processAudio(
             double inputPeak = VuInputPeak[channel].processSample(inputSample);
             double inputRMS  = VuInputRMS[channel].processSample(inputSample);
             if(maxInputPeak[channel] < inputPeak) maxInputPeak[channel] = inputPeak;
-            if(maxInputRMS[channel]  < inputRMS ) maxInputRMS[channel]  = inputRMS;
+            if(maxInputRMS [channel] < inputRMS ) maxInputRMS [channel] = inputRMS;
             
+            double env = 0.0;
+            double gain = 1.0;
+            
+            // Linear scale detection ===========================================================
             if (scTopology == ScTopologyLin)
             {
                 // Envelope Detection ===========================================================
-                double env = 0.0;
                 switch (dType) {
-                    case detectorType::Bold :
+                    case detectorType::Bold :  // It matches Metric Halo ChannelStrip MIO Comp, and Weiss DS1-MK3 if atk*3 & rls*2
                     {
                         double vin = rectified[channel];
-                        double delta = vin - detector_state[channel];
+                        double delta = vin - envelope_state[channel];
                         double pp = smooth::Logistics(delta, k_rms); // (delta > 0) ? 1.0 : 0.0;
                         double nn = 1.0 - pp;
                         double g = (pp * sqrtAtkCoef + nn * powrRlsCoef);
-                        detector_state[channel] = g * detector_state[channel] + (1.0 - g) * vin;
-                        env = (detector_state[channel]);
+                        envelope_state[channel] = g * envelope_state[channel] + (1.0 - g) * vin;
+                        env = (envelope_state[channel]);
                     }
                         break;
                         
-                    case detectorType::Smooth :
+                    case detectorType::Smooth : // Semi-true-RMS. a true RMS would use square-sum-normalize-sqrt, not this 1p-filter
                     {
                         double vin = squared[channel];
-                        double delta = vin - detector_state[channel];
+                        double delta = vin - envelope_state[channel];
                         double pp = smooth::Logistics(delta, k_rms); // (delta > 0) ? 1.0 : 0.0;
                         double nn = 1.0 - pp;
                         double g = (pp * sqrtAtkCoef + nn * powrRlsCoef);
-                        detector_state[channel] = g * detector_state[channel] + (1.0 - g) * vin;
-                        env = sqrt(detector_state[channel]);
+                        envelope_state[channel] = g * envelope_state[channel] + (1.0 - g) * vin;
+                        env = sqrt(envelope_state[channel]);
                     }
                         break;
                         
                     case detectorType::Clean :
                     {
                         double vin = HT_dtct[channel];
-                        double delta = vin - detector_state[channel];
+                        double delta = vin - envelope_state[channel];
                         double pp = smooth::Logistics(delta, k_HT); // (delta > 0) ? 1.0 : 0.0;
                         double nn = 1.0 - pp;
                         double g = (pp * sqrtAtkCoef + nn * powrRlsCoef);
-                        detector_state[channel] = g * detector_state[channel] + (1.0 - g) * vin;
-                        env = sqrt(detector_state[channel]);
+                        envelope_state[channel] = g * envelope_state[channel] + (1.0 - g) * vin;
+                        env = sqrt(envelope_state[channel]);
                     }
                         break;
                         
@@ -502,22 +505,20 @@ void RLFCMP_Processor::processAudio(
                     {
                         double vin = HT_dtct[channel];
                         // slow detector, Hilbert
-                        double delta = vin - detector_state[channel];
+                        double delta = vin - envelope_state[channel];
                         double pp = smooth::Logistics(delta, k_HT); // (delta > 0) ? 1.0 : 0.0;
                         double nn = 1.0 - pp;
                         double g = (pp * sqrtAtkCoef + nn * powrRlsCoef);
-                        detector_state[channel] = g * detector_state[channel] + (1.0 - g) * vin;
-                        env = sqrt(detector_state[channel]);
+                        envelope_state[channel] = g * envelope_state[channel] + (1.0 - g) * vin;
+                        env = sqrt(envelope_state[channel]);
                     }
                         break;
                 }
                 
                 // Transfer Curve ===========================================================
-                double env = DecibelConverter::ToDecibel(inputSample);
+                env = DecibelConverter::ToDecibel(env);
                 
                 double overshoot = env - (threshold);
-                
-                double gain = 1.0;
                 
                 if (overshoot <= -kneeHalf)
                     gain = 0.0;
@@ -543,76 +544,117 @@ void RLFCMP_Processor::processAudio(
                 if (gain < GR_Max) GR_Max = gain;
                 gain = DecibelConverter::ToGain(gain);
             }
+            // Logarithmic level detection ===========================================================
             else
             {
-                // Transfer Curve ===========================================================
-                env = DecibelConverter::ToDecibel(env);
-                
-                double overshoot = env - (threshold);
-                
-                double gain = 1.0;
-                
-                if (overshoot <= -kneeHalf)
-                    gain = 0.0;
-                else if (overshoot > -kneeHalf && overshoot <= kneeHalf)
-                    gain = 0.5 * slope * ((overshoot + kneeHalf) * (overshoot + kneeHalf)) / knee;
-                else
-                    gain = slope * overshoot;
-                
-                // Envelope Detection ===========================================================
-                double env = 0.0;
                 switch (dType) {
-                    case detectorType::Bold :
+                    case detectorType::Bold : // It matches Sonnox Oxford Dynamics, Cenozoix if atk*2, rls*2
                     {
-                        double vin = rectified[channel];
-                        double delta = vin - detector_state[channel];
+                        // Transfer Curve ===========================================================
+                        env = DecibelConverter::ToDecibel(rectified[channel]);
+                        
+                        double overshoot = env - (threshold);
+                        
+                        if (overshoot <= -kneeHalf)
+                            gain = 0.0;
+                        else if (overshoot > -kneeHalf && overshoot <= kneeHalf)
+                            gain = 0.5 * slope * ((overshoot + kneeHalf) * (overshoot + kneeHalf)) / knee;
+                        else
+                            gain = slope * overshoot;
+                        
+                        // Envelope Detection ===========================================================
+                        double vin = gain;
+                        double delta = vin - envelope_state[channel]; // 0.1 == -120 < 0.2 == -60
+                        delta *= -1.0;
                         double pp = smooth::Logistics(delta, k_rms); // (delta > 0) ? 1.0 : 0.0;
                         double nn = 1.0 - pp;
-                        double g = (pp * sqrtAtkCoef + nn * powrRlsCoef);
-                        detector_state[channel] = g * detector_state[channel] + (1.0 - g) * vin;
-                        env = (detector_state[channel]);
+                        double g = (pp * atkCoef + nn * rlsCoef);
+                        envelope_state[channel] = g * envelope_state[channel] + (1.0 - g) * vin;
+                        gain = (envelope_state[channel]);
                     }
                         break;
                         
-                    case detectorType::Smooth :
+                    case detectorType::Smooth : // Semi-true-RMS. a true RMS would use square-sum-normalize-sqrt, not this 1p-filter
                     {
-                        double vin = squared[channel];
-                        double delta = vin - detector_state[channel];
+                        // Transfer Curve ===========================================================
+                        env = DecibelConverter::ToDecibel(sqrt(squared[channel]));
+                        
+                        double overshoot = env - (threshold);
+                        
+                        if (overshoot <= -kneeHalf)
+                            gain = 0.0;
+                        else if (overshoot > -kneeHalf && overshoot <= kneeHalf)
+                            gain = 0.5 * slope * ((overshoot + kneeHalf) * (overshoot + kneeHalf)) / knee;
+                        else
+                            gain = slope * overshoot;
+                        
+                        // Envelope Detection ===========================================================
+                        gain = DecibelConverter::ToGain(gain);
+                        gain *= gain;
+                        // gain = DecibelConverter::ToDecibel(gain);
+                        double vin = gain;
+                        double delta = vin - envelope_state[channel];
+                        delta *= -1.0;
                         double pp = smooth::Logistics(delta, k_rms); // (delta > 0) ? 1.0 : 0.0;
                         double nn = 1.0 - pp;
-                        double g = (pp * sqrtAtkCoef + nn * powrRlsCoef);
-                        detector_state[channel] = g * detector_state[channel] + (1.0 - g) * vin;
-                        env = sqrt(detector_state[channel]);
+                        double g = (pp * atkCoef + nn * rlsCoef);
+                        envelope_state[channel] = g * envelope_state[channel] + (1.0 - g) * vin;
+                        // gain = DecibelConverter::ToDecibel(sqrt(DecibelConverter::ToGain(envelope_state[channel])));
+                        gain = DecibelConverter::ToDecibel(sqrt(envelope_state[channel]));
                     }
                         break;
                         
                     case detectorType::Clean :
                     {
-                        double vin = HT_dtct[channel];
-                        double delta = vin - detector_state[channel];
+                        // Transfer Curve ===========================================================
+                        env = DecibelConverter::ToDecibel(sqrt(HT_dtct[channel]));
+                        
+                        double overshoot = env - (threshold);
+                        
+                        if (overshoot <= -kneeHalf)
+                            gain = 0.0;
+                        else if (overshoot > -kneeHalf && overshoot <= kneeHalf)
+                            gain = 0.5 * slope * ((overshoot + kneeHalf) * (overshoot + kneeHalf)) / knee;
+                        else
+                            gain = slope * overshoot;
+                        
+                        // Envelope Detection ===========================================================
+                        double vin = gain;
+                        double delta = vin - envelope_state[channel];
+                        delta *= -1.0;
                         double pp = smooth::Logistics(delta, k_HT); // (delta > 0) ? 1.0 : 0.0;
                         double nn = 1.0 - pp;
                         double g = (pp * sqrtAtkCoef + nn * powrRlsCoef);
-                        detector_state[channel] = g * detector_state[channel] + (1.0 - g) * vin;
-                        env = sqrt(detector_state[channel]);
+                        envelope_state[channel] = g * envelope_state[channel] + (1.0 - g) * vin;
+                        gain = (envelope_state[channel]);
                     }
                         break;
                         
                     default:
-                    {
-                        double vin = HT_dtct[channel];
-                        // slow detector, Hilbert
-                        double delta = vin - detector_state[channel];
+                    {// Transfer Curve ===========================================================
+                        env = DecibelConverter::ToDecibel(HT_dtct[channel]);
+                        
+                        double overshoot = env - (threshold);
+                        
+                        if (overshoot <= -kneeHalf)
+                            gain = 0.0;
+                        else if (overshoot > -kneeHalf && overshoot <= kneeHalf)
+                            gain = 0.5 * slope * ((overshoot + kneeHalf) * (overshoot + kneeHalf)) / knee;
+                        else
+                            gain = slope * overshoot;
+                        
+                        // Envelope Detection ===========================================================
+                        double vin = gain;
+                        double delta = vin - envelope_state[channel];
+                        delta *= -1.0;
                         double pp = smooth::Logistics(delta, k_HT); // (delta > 0) ? 1.0 : 0.0;
                         double nn = 1.0 - pp;
                         double g = (pp * sqrtAtkCoef + nn * powrRlsCoef);
-                        detector_state[channel] = g * detector_state[channel] + (1.0 - g) * vin;
-                        env = sqrt(detector_state[channel]);
+                        envelope_state[channel] = g * envelope_state[channel] + (1.0 - g) * vin;
+                        gain = (sqrt(envelope_state[channel]));
                     }
                         break;
                 }
-                
-                
                 
                 // Look-ahead FIR ===========================================================
                 if (pLookaheadEnable)
