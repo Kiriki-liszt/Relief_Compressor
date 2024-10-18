@@ -33,9 +33,11 @@ EQCurveView::EQCurveView(
     FFTFillColor = kBlackCColor;
     idleRate = 60;
     
-    LF_SVF.setRange(yg331::PassShelfFilter::rLow);
-    HF_SVF.setRange(yg331::PassShelfFilter::rHigh);
+    //LF_SVF.setRange(yg331::PassShelfFilter::rLow);
+    //HF_SVF.setRange(yg331::PassShelfFilter::rHigh);
     
+    LF_SVF.setQ(M_SQRT1_2);
+    HF_SVF.setQ(M_SQRT1_2);
     LF_SVF.setFs(48000.0);
     HF_SVF.setFs(48000.0);
     
@@ -1134,17 +1136,14 @@ tresult PLUGIN_API RLFCMP_Controller::initialize (FUnknown* context)
     
     tag          = kParamDetectorType;
     auto* ParamDetectorType = new Vst::StringListParameter(STR16("Detector Type"), tag);
-    ParamDetectorType->appendString (STR16("Bold"));
-    ParamDetectorType->appendString (STR16("Smooth"));
-    ParamDetectorType->appendString (STR16("Clean"));
-    ParamDetectorType->getInfo().defaultNormalizedValue = ParamDetectorType->toNormalized(1.0);
-    ParamDetectorType->setNormalized(ParamDetectorType->toNormalized(1.0));
+    ParamDetectorType->appendString (STR16("PEAK"));
+    ParamDetectorType->appendString (STR16("RMS"));
     parameters.addParameter (ParamDetectorType);
     
     tag          = kParamSidechainTopology;
     auto* ParamSidechainTopology = new Vst::StringListParameter(STR16("Sidechain Topology"), tag);
-    ParamSidechainTopology->appendString (STR16("Lin"));
-    ParamSidechainTopology->appendString (STR16("Log"));
+    ParamSidechainTopology->appendString (STR16("LIN"));
+    ParamSidechainTopology->appendString (STR16("LOG"));
     parameters.addParameter (ParamSidechainTopology);
 
     tag          = kParamAttack;
@@ -1549,12 +1548,25 @@ tresult PLUGIN_API RLFCMP_Controller::notify(Vst::IMessage* message)
         if (message->getAttributes ()->getFloat (msgGainReduction, getValue) == kResultTrue)
         {
             vuGainReduction  = getValue;
-            
-            if (!vuMeterControllers.empty())
+
+            if (!vuMeterList.empty())
             {
-                for (auto iter = vuMeterControllers.begin(); iter != vuMeterControllers.end(); iter++)
+                for (auto iter = vuMeterList.begin(); iter != vuMeterList.end(); iter++)
                 {
-                    (*iter)->updateVuMeterValue();
+                    if (*iter == nullptr) continue;
+                    int type = (*iter)->getTag();
+                    switch (type) {
+                        case kInLPeak: (*iter)->setValue(vuInLPeak); break;
+                        case kInRPeak: (*iter)->setValue(vuInRPeak); break;
+                        case kInLRMS: (*iter)->setValue(vuInLRMS); break;
+                        case kInRRMS: (*iter)->setValue(vuInRRMS); break;
+                        case kOutLPeak: (*iter)->setValue(vuOutLPeak); break;
+                        case kOutRPeak: (*iter)->setValue(vuOutRPeak); break;
+                        case kOutLRMS: (*iter)->setValue(vuOutLRMS); break;
+                        case kOutRRMS: (*iter)->setValue(vuOutRRMS); break;
+                            
+                        default: break;
+                    }
                 }
             }
         }

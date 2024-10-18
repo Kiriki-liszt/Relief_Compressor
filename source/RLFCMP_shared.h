@@ -25,24 +25,19 @@ using SampleRate = Steinberg::Vst::SampleRate;
 using int32      = Steinberg::int32;
 using uint32     = Steinberg::uint32;
 
-typedef enum {
-    overSample_1x,
-    overSample_2x,
-    overSample_4x,
-    overSample_8x,
-    overSample_num = 3
-} overSample;
+static SMTG_CONSTEXPR int overSample_1x  = 0;
+static SMTG_CONSTEXPR int overSample_2x  = 1;
+static SMTG_CONSTEXPR int overSample_4x  = 2;
+static SMTG_CONSTEXPR int overSample_8x  = 3;
+static SMTG_CONSTEXPR int overSample_num = 3;
 
-enum detectorType
-{
-    Bold,
-    Smooth,
-    Clean,
-    detectorNum = 2
-};
+static SMTG_CONSTEXPR int detectorPeak = 0;
+static SMTG_CONSTEXPR int detectorRMS  = 1;
+static SMTG_CONSTEXPR int detectorNum  = 1;
 
-static constexpr int ScTopologyLin = 0;
-static constexpr int ScTopologyLog = 1;
+static SMTG_CONSTEXPR int ScTopologyLin = 0;
+static SMTG_CONSTEXPR int ScTopologyLog = 1;
+static SMTG_CONSTEXPR int ScTopologyNum = 1;
 
 //------------------------------------------------------------------------
 //  Class for converter
@@ -50,8 +45,8 @@ static constexpr int ScTopologyLog = 1;
 class DecibelConverter
 {
 public:
-    static constexpr double log2dB = 20.0 / M_LN10;
-    static constexpr double dB2log = M_LN10 / 20.0;
+    static SMTG_CONSTEXPR double log2dB = 20.0 / M_LN10;
+    static SMTG_CONSTEXPR double dB2log = M_LN10 / 20.0;
     static inline ParamValue ToGain (ParamValue dB)
     {
         // return std::pow(10.0, dB * 0.05);
@@ -176,25 +171,207 @@ private:
     int32 numSteps = -1;
 };
 
-class PassShelfFilter {
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+class SVF_12
+{
 public:
-    static constexpr int tPass = 0;
-    static constexpr int tShelf = 1;
-    static constexpr int tNum = 1;
+
+    static SMTG_CONSTEXPR int tHighPass  = 0;
+    static SMTG_CONSTEXPR int tBandPass  = 1;
+    static SMTG_CONSTEXPR int tLowPass   = 2;
+    static SMTG_CONSTEXPR int tAllPass   = 3;
+    static SMTG_CONSTEXPR int tNotch     = 4;
+    static SMTG_CONSTEXPR int tBell      = 5;
+    static SMTG_CONSTEXPR int tLowShelf  = 6;
+    static SMTG_CONSTEXPR int tHighShelf = 7;
+    static SMTG_CONSTEXPR int tNum       = 7;
     
-    static constexpr int rLow = 0;
-    static constexpr int rHigh = 1;
+    SVF_12()
+    {
+        initSVF();
+    };
+    
+    void   setIn(bool v) { In = v; }
+    bool   getIn() const { return In; }
+    
+    void   setFreq(double v) { Hz = v; }
+    double getFreq() const { return Hz; }
+    
+    void   setGain(double v) { dB = v; }
+    double getGain() const { return dB; }
+    
+    void   setQ(double v) { Q = v; }
+    double getQ() const { return Q; }
+    
+    void   setType(int v) { Type = v; }
+    int    getType() const { return Type; }
+
+    void   setFs(double v) { Fs = v; }
+    double getFs() const { return Fs; }
+
+    inline void initSVF()
+    {
+        ic1eq = 0.0;
+        ic2eq = 0.0;
+    };
+
+    inline void setSVF(int plainIn, double plainHz, double plaindB, double plainQ, int plainType, double plainFs)
+    {
+        In    = plainIn ? 1 : 0;
+        Hz    = plainHz;
+        dB    = plaindB;
+        Q     = plainQ;
+        Type  = plainType;
+        Fs    = plainFs;
+
+        makeSVF();
+    }
+    
+    static SMTG_CONSTEXPR double dB2A = M_LN10 / 40.0;
+    inline void makeSVF()
+    {
+        if (Hz > Fs / 2.0) Hz = Fs / 2.0;
+        w = M_PI * Hz / Fs;
+        g = tan(w);
+        k = 1.0 / Q;
+        double A = std::exp(dB * dB2A);
+        
+        switch (Type)
+        {
+            case tHighPass:  m0 = 1;     m1 = 0;     m2 = 0;   break;
+            case tBandPass:  m0 = 0;     m1 = 1;     m2 = 0;   break;
+            case tLowPass:   m0 = 0;     m1 = 0;     m2 = 1;   break;
+            case tAllPass:   m0 = 1;     m1 = -k;    m2 = 1;   break;
+            case tBell:      m0 = 1;     m1 = k * A; m2 = 1;     k = k / A;       break;
+            case tLowShelf:  m0 = 1;     m1 = k * A; m2 = A * A; g = g / sqrt(A); break;
+            case tHighShelf: m0 = A * A; m1 = k * A; m2 = 1;     g = g * sqrt(A); break;
+            default: break;
+        }
+
+        gt0 = 1.0 / (1.0 + g * (g + k));
+        gk0 = (g + k) * gt0;
+        return;
+    };
+
+    inline double computeSVF (double vin)
+    {
+        // tick serial(possibly quicker on cpus with low latencies)
+        t0 = vin - ic2eq;
+        v0 = gt0 * t0 - gk0 * ic1eq; // high
+        t1 = g * v0;
+        v1 = ic1eq + t1; // band
+        t2 = g * v1;
+        v2 = ic2eq + t2; // low
+        ic1eq += 2.0 * t1;
+        ic2eq += 2.0 * t2;
+
+        if (In != 1) return vin;
+        return m0 * v0 + m1 * v1 + m2 * v2;
+    };
+    
+    inline double mag_response(double freq)
+    {
+        if (!In) return 1.0;
+
+        double ONE_OVER_SAMPLE_RATE = 1.0 / Fs;
+
+        // exp(complex(0.0, -2.0 * pi) * frequency / sampleRate)
+        double _zr = (0.0) * freq * ONE_OVER_SAMPLE_RATE;
+        double _zi = (-2.0 * M_PI) * freq * ONE_OVER_SAMPLE_RATE;
+
+        // z = zr + zi;
+        double zr = exp(_zr) * cos(_zi);
+        double zi = exp(_zr) * sin(_zi);
+
+        double nr = 0, ni = 0;
+        double dr = 0, di = 0;
+
+        // z * z
+        double zsq_r = zr * zr - zi * zi;
+        double zsq_i = zi * zr + zr * zi;
+        double gsq = g * g;
+
+        // Numerator complex
+        double c_nzsq = (m0 + m1 * g + m2 * gsq);
+        double c_nz   = (m0 * -2.0 + m2 * 2.0 * gsq);
+        double c_n    = (m0 + m1 * -g + m2 * gsq);
+        nr = zsq_r * c_nzsq + zr * c_nz + c_n;
+        ni = zsq_i * c_nzsq + zi * c_nz;
+
+        // Denominator complex
+        double c_dzsq = (1.0 + k * g + gsq);
+        double c_dz = (-2.0 + 2.0 * gsq);
+        double c_d = (1.0 + k * -g + gsq);
+        dr = zsq_r * c_dzsq + zr * c_dz + c_d;
+        di = zsq_i * c_dzsq + zi * c_dz;
+        // Numerator / Denominator
+        double norm = dr * dr + di * di;
+        double ddr = (nr * dr + ni * di) / norm;
+        double ddi = (ni * dr - nr * di) / norm;
+
+        return sqrt(ddr * ddr + ddi * ddi);
+    }
+
+// private:
+    int    In = 0;
+    double Hz = 1000.0;
+    double dB = 0.0;
+    double Q  = M_SQRT1_2;
+    int    Type = tBell;
+    double Fs = 48000.0;
+
+    double w = Hz * M_PI / Fs;
+    double g = tan(w);
+    double k = 1.0 / Q;
+    double gt0 = 1 / (1 + g * (g + k));
+    double gk0 = (g + k) * gt0;
+
+    double m0 = 0.0, m1 = 0.0, m2 = 0.0;
+    double v0 = 0.0, v1 = 0.0, v2 = 0.0;
+    double t0 = 0.0, t1 = 0.0, t2 = 0.0;
+    double ic1eq = 0.0;
+    double ic2eq = 0.0;
+};
+
+
+
+
+
+
+
+class SVF_6 {
+public:
+    static SMTG_CONSTEXPR int tPass  = 0;
+    static SMTG_CONSTEXPR int tShelf = 1;
+    static SMTG_CONSTEXPR int tNum   = 1;
+    
+    static SMTG_CONSTEXPR int rLow   = 0;
+    static SMTG_CONSTEXPR int rHigh  = 1;
     
     typedef struct ds
     {
         bool   In = true;
-        double Freq = 100.0;
+        double Hz = 100.0;
         double dB = 0.0;
         int    Type = tPass;
         int    Range = rLow;
         double Fs = 48000.0;
 
-        double w = Freq * M_PI / Fs;;
+        double w = Hz * M_PI / Fs;
         double g = tan(w);
 
         double m0 = 1.0, m2 = 1.0;
@@ -203,7 +380,7 @@ public:
         double iceq = 0.0;
     } dataset;
 
-    PassShelfFilter()
+    SVF_6()
     {
         initSVF();
     }
@@ -216,8 +393,8 @@ public:
     void   setIn(bool v) { flt.In = v; }
     bool   getIn() const { return flt.In; }
     
-    void   setFreq(double v) { flt.Freq = v; }
-    double getFreq() const { return flt.Freq; }
+    void   setFreq(double v) { flt.Hz = v; }
+    double getFreq() const { return flt.Hz; }
     
     void   setGain(double v) { flt.dB = v; }
     double getGain() const { return flt.dB; }
@@ -231,10 +408,10 @@ public:
     void   setFs(double v) { flt.Fs = v; }
     double getFs() const { return flt.Fs; }
     
-    void setSVF(double In, double Freq, double dB, int type, double Fs)
+    void setSVF(double In, double Hz, double dB, int type, double Fs)
     {
         flt.In    = In ? 1 : 0;
-        flt.Freq  = Freq;
+        flt.Hz    = Hz;
         flt.dB    = dB;
         flt.Type  = type;
         flt.Fs    = Fs;
@@ -244,8 +421,8 @@ public:
 
     void makeSVF()
     {
-        if (flt.Freq > flt.Fs / 2.0) flt.Freq = flt.Fs / 2.0;
-        flt.w = flt.Freq * M_PI / flt.Fs;
+        if (flt.Hz > flt.Fs / 2.0) flt.Hz = flt.Fs / 2.0;
+        flt.w = flt.Hz * M_PI / flt.Fs;
         flt.g = tan(flt.w);
         double A = pow(10.0, flt.dB / 40.0);
         double AmA = A * A;
@@ -376,78 +553,82 @@ public:
 
 
 
-
+static SMTG_CONSTEXPR ParamValue PF_FREQ  = 1500.0;
+static SMTG_CONSTEXPR ParamValue PF_Q     = M_SQRT1_2; // == 1.0 ~= 1.007
+static SMTG_CONSTEXPR ParamValue PF_dB    = 4.0;
+static SMTG_CONSTEXPR ParamValue RLB_FREQ = 38.134;
+static SMTG_CONSTEXPR ParamValue RLB_Q    = 0.70758;
 
 //------------------------------------------------------------------------
 //  Min, Max, Default of Parameters
 //------------------------------------------------------------------------
-static constexpr ParamValue dftBypass          = 0.0;
-static constexpr ParamValue dftSoftBypass      = 0.0;
-static constexpr ParamValue dftLookaheadEnable = 1.0;
-static constexpr ParamValue dftScLfIn          = 1.0;
-static constexpr ParamValue dftScHfIn          = 1.0;
-static constexpr ParamValue dftDetectorType    = detectorType::Smooth;
-static constexpr ParamValue dftSidechainTopology = ScTopologyLin;
+static SMTG_CONSTEXPR ParamValue dftBypass          = 0.0;
+static SMTG_CONSTEXPR ParamValue dftSoftBypass      = 0.0;
+static SMTG_CONSTEXPR ParamValue dftLookaheadEnable = 1.0;
+static SMTG_CONSTEXPR ParamValue dftScLfIn          = 1.0;
+static SMTG_CONSTEXPR ParamValue dftScHfIn          = 1.0;
+static SMTG_CONSTEXPR ParamValue dftDetectorType    = detectorPeak;
+static SMTG_CONSTEXPR ParamValue dftSidechainTopology = ScTopologyLin;
 
-static constexpr ParamValue minScLfFreq  = 20.0;
-static constexpr ParamValue maxScLfFreq  = 18000.0;
-static constexpr ParamValue dftScLfFreq  = 60.0;
+static SMTG_CONSTEXPR ParamValue minScLfFreq  = 20.0;
+static SMTG_CONSTEXPR ParamValue maxScLfFreq  = 18000.0;
+static SMTG_CONSTEXPR ParamValue dftScLfFreq  = RLB_FREQ;
 
-static constexpr ParamValue minScLfGain  = -20.0;
-static constexpr ParamValue maxScLfGain  = 20.0;
-static constexpr ParamValue dftScLfGain  = 0.0;
+static SMTG_CONSTEXPR ParamValue minScLfGain  = -20.0;
+static SMTG_CONSTEXPR ParamValue maxScLfGain  = 20.0;
+static SMTG_CONSTEXPR ParamValue dftScLfGain  = 0.0;
 
-static constexpr ParamValue minScHfFreq  = 20.0;
-static constexpr ParamValue maxScHfFreq  = 18000.0;
-static constexpr ParamValue dftScHfFreq  = 1880.0;
+static SMTG_CONSTEXPR ParamValue minScHfFreq  = 20.0;
+static SMTG_CONSTEXPR ParamValue maxScHfFreq  = 18000.0;
+static SMTG_CONSTEXPR ParamValue dftScHfFreq  = PF_FREQ;
 
-static constexpr ParamValue minScHfGain  = -20.0;
-static constexpr ParamValue maxScHfGain  = 20.0;
-static constexpr ParamValue dftScHfGain  = 4.0;
+static SMTG_CONSTEXPR ParamValue minScHfGain  = -20.0;
+static SMTG_CONSTEXPR ParamValue maxScHfGain  = 20.0;
+static SMTG_CONSTEXPR ParamValue dftScHfGain  = PF_dB;
 
-static constexpr ParamValue minAttack    = 0.5;
-static constexpr ParamValue maxAttack    = 70.0;
-static constexpr ParamValue dftAttack    = 10.0;
+static SMTG_CONSTEXPR ParamValue minAttack    = 0.5;
+static SMTG_CONSTEXPR ParamValue maxAttack    = 70.0;
+static SMTG_CONSTEXPR ParamValue dftAttack    = 10.0;
 
-static constexpr ParamValue minRelease   = 20.0;
-static constexpr ParamValue maxRelease   = 2000.0;
-static constexpr ParamValue dftRelease   = 160.0;
+static SMTG_CONSTEXPR ParamValue minRelease   = 20.0;
+static SMTG_CONSTEXPR ParamValue maxRelease   = 2000.0;
+static SMTG_CONSTEXPR ParamValue dftRelease   = 160.0;
 
-static constexpr ParamValue minThreshold = -40.0;
-static constexpr ParamValue maxThreshold = 0.0;
-static constexpr ParamValue dftThreshold = -15.0;
+static SMTG_CONSTEXPR ParamValue minThreshold = -40.0;
+static SMTG_CONSTEXPR ParamValue maxThreshold = 0.0;
+static SMTG_CONSTEXPR ParamValue dftThreshold = -15.0;
 
-static constexpr ParamValue minRatio     = 1.0;
-static constexpr ParamValue maxRatio     = 20.0;
-static constexpr ParamValue dftRatio     = 4.0;
+static SMTG_CONSTEXPR ParamValue minRatio     = 1.0;
+static SMTG_CONSTEXPR ParamValue maxRatio     = 20.0;
+static SMTG_CONSTEXPR ParamValue dftRatio     = 4.0;
 
-static constexpr ParamValue minKnee      = 0.0;
-static constexpr ParamValue maxKnee      = 20.0;
-static constexpr ParamValue dftKnee      = 5.0;
+static SMTG_CONSTEXPR ParamValue minKnee      = 0.0;
+static SMTG_CONSTEXPR ParamValue maxKnee      = 20.0;
+static SMTG_CONSTEXPR ParamValue dftKnee      = 5.0;
 
-static constexpr ParamValue minMakeup    = 0.0;
-static constexpr ParamValue maxMakeup    = 24.0;
-static constexpr ParamValue dftMakeup    = 0.0;
+static SMTG_CONSTEXPR ParamValue minMakeup    = 0.0;
+static SMTG_CONSTEXPR ParamValue maxMakeup    = 24.0;
+static SMTG_CONSTEXPR ParamValue dftMakeup    = 0.0;
 
-static constexpr ParamValue minMix       = 0.0;
-static constexpr ParamValue maxMix       = 100.0;
-static constexpr ParamValue dftMix       = 100.0;
+static SMTG_CONSTEXPR ParamValue minMix       = 0.0;
+static SMTG_CONSTEXPR ParamValue maxMix       = 100.0;
+static SMTG_CONSTEXPR ParamValue dftMix       = 100.0;
 
-static constexpr ParamValue minInput     = -12.0;
-static constexpr ParamValue maxInput     = 12.0;
-static constexpr ParamValue dftInput     = 0.0;
+static SMTG_CONSTEXPR ParamValue minInput     = -12.0;
+static SMTG_CONSTEXPR ParamValue maxInput     = 12.0;
+static SMTG_CONSTEXPR ParamValue dftInput     = 0.0;
 
-static constexpr ParamValue minOutput    = -12.0;
-static constexpr ParamValue maxOutput    = 12.0;
-static constexpr ParamValue dftOutput    = 0.0;
+static SMTG_CONSTEXPR ParamValue minOutput    = -12.0;
+static SMTG_CONSTEXPR ParamValue maxOutput    = 12.0;
+static SMTG_CONSTEXPR ParamValue dftOutput    = 0.0;
 
-static const ParameterConverter paramScLfType     (0,  0,  ParameterConverter::paramType::list, PassShelfFilter::tNum);
+static const ParameterConverter paramScLfType     (0,  0,  ParameterConverter::paramType::list, SVF_6::tNum);
 static const ParameterConverter paramScLfFreq     (minScLfFreq,  maxScLfFreq,  ParameterConverter::paramType::log);
 static const ParameterConverter paramScLfGain     (minScLfGain,  maxScLfGain,  ParameterConverter::paramType::range);
-static const ParameterConverter paramScHfType     (0,  0,  ParameterConverter::paramType::list, PassShelfFilter::tNum);
+static const ParameterConverter paramScHfType     (0,  0,  ParameterConverter::paramType::list, SVF_6::tNum);
 static const ParameterConverter paramScHfFreq     (minScHfFreq,  maxScHfFreq,  ParameterConverter::paramType::log);
 static const ParameterConverter paramScHfGain     (minScHfGain,  maxScHfGain,  ParameterConverter::paramType::range);
-static const ParameterConverter paramDetectorType (0,  0,  ParameterConverter::paramType::list, detectorType::detectorNum);
+static const ParameterConverter paramDetectorType (0,  0,  ParameterConverter::paramType::list, detectorNum);
 static const ParameterConverter paramSidechainTopology (0,  0,  ParameterConverter::paramType::list, ScTopologyLog);
 static const ParameterConverter paramAttack       (minAttack,    maxAttack,    ParameterConverter::paramType::log);
 static const ParameterConverter paramRelease      (minRelease,   maxRelease,   ParameterConverter::paramType::log);
@@ -458,12 +639,6 @@ static const ParameterConverter paramMakeup       (minMakeup,    maxMakeup,    P
 static const ParameterConverter paramMix          (minMix,       maxMix,       ParameterConverter::paramType::range);
 static const ParameterConverter paramInput        (minInput,     maxInput,     ParameterConverter::paramType::range);
 static const ParameterConverter paramOutput       (minOutput,    maxOutput,    ParameterConverter::paramType::range);
-
-static constexpr ParamValue PF_FREQ  = 1500.0;
-static constexpr ParamValue PF_Q     = M_SQRT1_2; // == 1.0 ~= 1.007
-static constexpr ParamValue PF_dB    = 4.0;
-static constexpr ParamValue RLB_FREQ = 38.134;
-static constexpr ParamValue RLB_Q    = 0.70758;
 
 static const char* msgInputPeakL = "InputPeakL";
 static const char* msgInputPeakR = "InputPeakR";

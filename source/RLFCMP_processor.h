@@ -56,6 +56,8 @@ public:
     
     //------------------------------------------------------------------------
 protected:
+    std::vecter<double> level[2];
+    
     // Internal functions ===========================================================
     template <typename SampleType>
     void processAudio (SampleType** inputs, SampleType** outputs, int32 numChannels, SampleRate getSampleRate, int32 sampleFrames);
@@ -69,6 +71,8 @@ protected:
     
     // Some definitions ===========================================================
     static SMTG_CONSTEXPR int32 maxChannel = 2; // Strictly Stereo
+    
+    static SMTG_CONSTEXPR double dcHz = 0.05;
     
     static SMTG_CONSTEXPR ParamValue k_HT  = 300.0;
     static SMTG_CONSTEXPR ParamValue k_rms = 600.0; // if small, very short attack makes step in release
@@ -98,10 +102,11 @@ protected:
     static SMTG_CONSTEXPR double peakRMSDecay = 0.3; //sec
     
     static SMTG_CONSTEXPR double detectorAtk = 0.05; //msec
-    static SMTG_CONSTEXPR double detectorRls = 15.0; //msec
+    static SMTG_CONSTEXPR double detectorRls = 15.0; //msec ~= HOLD
     
     // Internal datastructures ===========================================================
-    PassShelfFilter SC_LF[maxChannel], SC_HF[maxChannel]; // SideChain Filters, simplified for pass and shelf, 6dB/oct 1p1z filter
+    SVF_12     SC_LF[maxChannel];
+    SVF_12     SC_HF[maxChannel];
     
     ParamValue HT_coefs[path_num][HT_stage];
     ParamValue HT_state[maxChannel][path_num][io_num][order][HT_stage] = {0, }; // 2-channel, 2-path, 2-state(x, y), 2-order(x1, x2), numCoefs-stages,
@@ -137,20 +142,20 @@ protected:
     bool       pBypass     = dftBypass > 0;
     bool       pSoftBypass = dftSoftBypass > 0;
     // pZoom,
-    overSample pOS         = overSample_1x;
+    int        pOS         = overSample_1x;
     
     bool       pScLfIn     = dftScLfIn > 0;
-    ParamValue pScLfType   = PassShelfFilter::rLow;
+    ParamValue pScLfType   = SVF_6::rLow;
     ParamValue pScLfFreq   = paramScLfFreq. ToNormalized(dftScLfFreq);
     ParamValue pScLfGain   = paramScLfGain. ToNormalized(dftScLfGain);
     bool       pScHfIn     = dftScHfIn > 0;
-    ParamValue pScHfType   = PassShelfFilter::rHigh;
+    ParamValue pScHfType   = SVF_6::rHigh;
     ParamValue pScHfFreq   = paramScHfFreq. ToNormalized(dftScHfFreq);
     ParamValue pScHfGain   = paramScHfGain. ToNormalized(dftScHfGain);
     bool       pScListen   = false;
     
     ParamValue pDType      = paramDetectorType.ToNormalized(dftDetectorType);
-    ParamValue pSCTopology = ScTopologyLin;
+    ParamValue pSCTopology = paramSidechainTopology.ToNormalized(dftSidechainTopology);
     ParamValue pAttack     = paramAttack.   ToNormalized(dftAttack);
     ParamValue pRelease    = paramRelease.  ToNormalized(dftRelease);
     bool       pLookaheadEnable = true;
@@ -192,6 +197,10 @@ protected:
     ParamValue mix         = pMix;
     ParamValue input       = DecibelConverter::ToGain(paramInput. ToPlain(pInput));
     ParamValue output      = DecibelConverter::ToGain(paramOutput.ToPlain(pOutput));
+    
+    // DC Blocker
+    double DC_state_x[2];
+    double DC_state_y[2];
 };
 
 //------------------------------------------------------------------------

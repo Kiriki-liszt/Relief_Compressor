@@ -39,17 +39,23 @@ public:
     CColor getFFTFillColor() const { return FFTFillColor; }
     
     // get/set Parameters
-    void   setIn(bool value, int type) { if (type == yg331::PassShelfFilter::rLow) {LF_SVF.setIn(value);}   else {HF_SVF.setIn(value);} setDirty(true); }
-    bool   getIn(int type) const       { if (type == yg331::PassShelfFilter::rLow) {return LF_SVF.getIn();} else {return HF_SVF.getIn();} }
-    
-    void   setType(int value, int type) { if (type == yg331::PassShelfFilter::rLow) {LF_SVF.setType(value);} else {HF_SVF.setType(value);} setDirty(true); }
-    int    getType(int type) const { if (type == yg331::PassShelfFilter::rLow) {return LF_SVF.getType();} else {return HF_SVF.getType();} }
-    
-    void   setFreq(double value, int type) { if (type == yg331::PassShelfFilter::rLow) {LF_SVF.setFreq(value);} else {HF_SVF.setFreq(value);} setDirty(true); }
-    int    getFreq(int type) const { if (type == yg331::PassShelfFilter::rLow) {return LF_SVF.getFreq();} else {return HF_SVF.getFreq();} }
-    
-    void   setGain(double value, int type) { if (type == yg331::PassShelfFilter::rLow) {LF_SVF.setGain(value);} else {HF_SVF.setGain(value);} setDirty(true); }
-    int    getGain(int type) const { if (type == yg331::PassShelfFilter::rLow) {return LF_SVF.getGain();} else {return HF_SVF.getGain();} }
+    void   setLfIn  (bool value)   { LF_SVF.setIn(value); setDirty(true); }
+    bool   getLfIn  () const       { return LF_SVF.getIn(); }
+    void   setLfType(int value)    { LF_SVF.setType(value); setDirty(true); }
+    int    getLfType() const       { return LF_SVF.getType(); }
+    void   setLfFreq(double value) { LF_SVF.setFreq(value); setDirty(true); }
+    int    getLfFreq() const       { return LF_SVF.getFreq(); }
+    void   setLfGain(double value) { LF_SVF.setGain(value); setDirty(true); }
+    int    getLfGain() const       { return LF_SVF.getGain(); }
+
+    void   setHfIn  (bool value)   { HF_SVF.setIn(value); setDirty(true); }
+    bool   getHfIn  () const       { return HF_SVF.getIn(); }
+    void   setHfType(int value)    { HF_SVF.setType(value); setDirty(true); }
+    int    getHfType() const       { return HF_SVF.getType(); }
+    void   setHfFreq(double value) { HF_SVF.setFreq(value); setDirty(true); }
+    int    getHfFreq() const       { return HF_SVF.getFreq(); }
+    void   setHfGain(double value) { HF_SVF.setGain(value); setDirty(true); }
+    int    getHfGain() const       { return HF_SVF.getGain(); }
     
     void   makeSVF() { LF_SVF.makeSVF(); HF_SVF.makeSVF(); setDirty(true); }
 
@@ -77,8 +83,8 @@ protected:
     CColor FFTLineColor;
     CColor FFTFillColor;
 
-    yg331::PassShelfFilter LF_SVF;
-    yg331::PassShelfFilter HF_SVF;
+    yg331::SVF_12 LF_SVF;
+    yg331::SVF_12 HF_SVF;
 
     static constexpr int fftOrder = yg331::_fftOrder;
     static constexpr int fftSize = 1 << fftOrder;      // 4096 samples
@@ -312,7 +318,7 @@ class VuMeterController;
 //------------------------------------------------------------------------
 //  RLFCMP_Controller
 //------------------------------------------------------------------------
-class RLFCMP_Controller : public Steinberg::Vst::EditControllerEx1, public VSTGUI::VST3EditorDelegate
+class RLFCMP_Controller : public Steinberg::Vst::EditControllerEx1, public VSTGUI::VST3EditorDelegate, VSTGUI::ViewListenerAdapter
 {
 public:
 //------------------------------------------------------------------------
@@ -347,6 +353,28 @@ public:
     VSTGUI::IController* createSubController (VSTGUI::UTF8StringPtr name,
                                               const VSTGUI::IUIDescription* description,
                                               VSTGUI::VST3Editor* editor) SMTG_OVERRIDE;
+    VSTGUI::CView* verifyView (VSTGUI::CView* view,
+                               const VSTGUI::UIAttributes& attributes,
+                               const VSTGUI::IUIDescription* description,
+                               VSTGUI::VST3Editor* editor) SMTG_OVERRIDE
+    {
+        if (auto* control = dynamic_cast<VSTGUI::MyVuMeter*>(view); control)
+        {
+            vuMeterList.push_back(control);
+            view->registerViewListener (this);
+            return view;
+        }
+        return VSTGUI::VST3EditorDelegate::verifyView(view, attributes, description, editor);
+    }
+    void viewWillDelete (VSTGUI::CView* view) SMTG_OVERRIDE
+    {
+        auto it = std::find (vuMeterList.begin (), vuMeterList.end (), view);
+        if (it != vuMeterList.end ())
+        {
+            view->unregisterViewListener (this);
+            vuMeterList.erase (it);
+        }
+    }
     //---from ComponentBase-----
     // EditController
     Steinberg::tresult PLUGIN_API notify(Steinberg::Vst::IMessage* message) SMTG_OVERRIDE;
@@ -467,6 +495,11 @@ protected:
     UIEQCurveViewControllerList eqCurveViewControllers;
     UITransferCurveViewControllerList transferCurveViewControllerControllers;
     
+    
+    
+    std::vector<VSTGUI::MyVuMeter*> vuMeterList;
+    
+    
     ParamValue pZoom;
     Steinberg::Vst::ParamValue vuInLRMS = 0.0, vuInRRMS = 0.0;
     Steinberg::Vst::ParamValue vuInLPeak = 0.0, vuInRPeak = 0.0;
@@ -557,15 +590,14 @@ private:
             {
                 if (message == kChanged)
                 {
-                    
-                    if (p == ParamScLfIn   && ParamScLfIn  ) eqCurveView->setIn  (p->getNormalized(), yg331::PassShelfFilter::rLow);
-                    if (p == ParamScLfType && ParamScLfType) eqCurveView->setType(paramScLfType.ToPlain(p->getNormalized()), yg331::PassShelfFilter::rLow);
-                    if (p == ParamScLfFreq && ParamScLfFreq) eqCurveView->setFreq(paramScLfFreq.ToPlain(p->getNormalized()), yg331::PassShelfFilter::rLow);
-                    if (p == ParamScLfGain && ParamScLfGain) eqCurveView->setGain(paramScLfGain.ToPlain(p->getNormalized()), yg331::PassShelfFilter::rLow);
-                    if (p == ParamScHfIn   && ParamScHfIn  ) eqCurveView->setIn  (p->getNormalized(), yg331::PassShelfFilter::rHigh);
-                    if (p == ParamScHfType && ParamScHfType) eqCurveView->setType(paramScHfType.ToPlain(p->getNormalized()), yg331::PassShelfFilter::rHigh);
-                    if (p == ParamScHfFreq && ParamScHfFreq) eqCurveView->setFreq(paramScHfFreq.ToPlain(p->getNormalized()), yg331::PassShelfFilter::rHigh);
-                    if (p == ParamScHfGain && ParamScHfGain) eqCurveView->setGain(paramScHfGain.ToPlain(p->getNormalized()), yg331::PassShelfFilter::rHigh);
+                    if (p == ParamScLfIn   && ParamScLfIn  ) eqCurveView->setLfIn  (p->getNormalized());
+                    if (p == ParamScLfType && ParamScLfType) eqCurveView->setLfType((paramScLfType.ToPlain(p->getNormalized())==0)?SVF_12::tHighPass:SVF_12::tLowShelf);
+                    if (p == ParamScLfFreq && ParamScLfFreq) eqCurveView->setLfFreq(paramScLfFreq.ToPlain(p->getNormalized()));
+                    if (p == ParamScLfGain && ParamScLfGain) eqCurveView->setLfGain(paramScLfGain.ToPlain(p->getNormalized()));
+                    if (p == ParamScHfIn   && ParamScHfIn  ) eqCurveView->setHfIn  (p->getNormalized());
+                    if (p == ParamScHfType && ParamScHfType) eqCurveView->setHfType((paramScHfType.ToPlain(p->getNormalized())==0)?SVF_12::tLowPass:SVF_12::tHighShelf);
+                    if (p == ParamScHfFreq && ParamScHfFreq) eqCurveView->setHfFreq(paramScHfFreq.ToPlain(p->getNormalized()));
+                    if (p == ParamScHfGain && ParamScHfGain) eqCurveView->setHfGain(paramScHfGain.ToPlain(p->getNormalized()));
                     // curveView->invalid();
                     eqCurveView->makeSVF();
                 }
@@ -787,9 +819,9 @@ private:
     using IUIDescription = VSTGUI::IUIDescription;
 
     //--- from IControlListener ----------------------
-    void valueChanged(CControl* /*pControl*/) SMTG_OVERRIDE {}
-    void controlBeginEdit(CControl* /*pControl*/) SMTG_OVERRIDE {}
-    void controlEndEdit(CControl* pControl) SMTG_OVERRIDE {}
+    // void valueChanged(CControl* /*pControl*/) SMTG_OVERRIDE {}
+    // void controlBeginEdit(CControl* /*pControl*/) SMTG_OVERRIDE {}
+    // void controlEndEdit(CControl* pControl) SMTG_OVERRIDE {}
     //--- is called when a view is created -----
     CView* verifyView(CView* view,
                       const UIAttributes&   /*attributes*/,
