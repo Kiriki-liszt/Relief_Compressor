@@ -332,12 +332,12 @@ void RLFCMP_Processor::processAudio(
 )
 {
     if (level[0].size() != sampleFrames) level[0].resize(sampleFrames);
-    if (level[1].size() != sampleFrames) level[1].resize(sampleFrames);
+        if (level[1].size() != sampleFrames) level[1].resize(sampleFrames);
     
     double invNumChannels = 1.0 / numChannels;
     ParamValue GR_Max = 0.0;
     
-    // Dunno why, but lets Auto-Vectorization of transform_reduce
+    // Dunno why, but uses 0.1 less cpu[PluginDoctor]
     int lookAhead_local = 0.5 * 0.001 * SampleRate;
     if (lookAhead_local > maxLAH) lookAhead_local = maxLAH;
     
@@ -355,39 +355,17 @@ void RLFCMP_Processor::processAudio(
 
     //double K = tan(M_PI * 0.15 / SampleRate); //lowpass
     
+    // because of locallity, this is faster
     for (int32 channel = 0; channel < numChannels; channel++)
     {
-        sample = 0;
-        while (sampleFrames > sample)
+        for (int sample = 0; sample < sampleFrames; sample++)
         {
-            inputs[channel][sample] *= input;
-            level[channel][sample] = SC_LF[channel].computeSVF(inputs[channel][sample]);
-            level[channel][sample] = SC_LF[channel].computeSVF(level[channel][sample]);
-            if (dType == detectorPeak) {
-                // Full wave rectifier ===========================================================
-                double vin = std::abs(level[channel][sample]);
-                double delta = vin - rectified_state[channel];
-                double pp = (delta > 0) ? 1.0 : 0.0; // smooth::Logistics(delta, k_detector); // (delta > 0) ? 1.0 : 0.0;
-                double nn = 1.0 - pp;
-                double g = (pp * 0.0 + nn * dtrRlsCoef);
-                rectified_state[channel] = g * rectified_state[channel] + (1.0 - g) * vin;
-                level[channel][sample] = rectified_state[channel];
-            }
-            else {
-                // Square wave rectifier ===========================================================
-                double vin = level[channel][sample] * level[channel][sample];
-                double delta = vin - squared_state[channel];
-                double pp = (delta > 0) ? 1.0 : 0.0; // smooth::Logistics(delta, k_detector*k_detector); // (delta > 0) ? 1.0 : 0.0;
-                double nn = 1.0 - pp;
-                double g = (pp * 0.0 + nn * powrDtrRlsCoef);
-                squared_state[channel] = g * squared_state[channel] + (1.0 - g) * vin;
-                level[channel][sample] = squared_state[channel];
-            }
-            sample++;
+            double t = SC_LF[channel].computeSVF(inputs[channel][sample]);
+            t = SC_HF[channel].computeSVF(t);
+            level[channel][sample] = t;
         }
     }
-    
-    sample = 0;
+
     // Process ===========================================================
     while (sampleFrames > sample)
     {
@@ -398,9 +376,9 @@ void RLFCMP_Processor::processAudio(
         
         for (int32 channel = 0; channel < numChannels; channel++)
         {
-            Vst::Sample64 inputSample = inputs[channel][sample];
+            Vst::Sample64 inputSample = level[channel][sample];
 
-            // inputSample *= input;
+            inputSample *= input;
             
             // SideChain Filtering ===========================================================
             //DC_state_y[channel] = (1.0 - K) * DC_state_y[channel] + inputSample - DC_state_x[channel];
@@ -498,12 +476,12 @@ void RLFCMP_Processor::processAudio(
                 switch (dType) {
                     case detectorPeak :  // It matches Metric Halo ChannelStrip MIO Comp, and Weiss DS1-MK3 if atk*3 & rls*2
                     {
-                        double r = getTau(paramRelease.ToPlain(pRelease) - detectorRls, SampleRate);
+                        // double r = getTau(paramRelease.ToPlain(pRelease) - detectorRls, SampleRate);
                         double vin = rectified[channel];
                         double delta = vin - envelope_state[channel];
                         double pp = smooth::Logistics(delta, k_rms); // (delta > 0) ? 1.0 : 0.0;
                         double nn = 1.0 - pp;
-                        double g = (pp * sqrtAtkCoef + nn * r);
+                        double g = (pp * sqrtAtkCoef + nn * powrRlsCoef);
                         envelope_state[channel] = g * envelope_state[channel] + (1.0 - g) * vin;
                         env = (envelope_state[channel]);
                     }
@@ -708,7 +686,7 @@ void RLFCMP_Processor::processAudio(
                 
             if (pScListen)
             {
-                inputSample = sideChain[channel];
+                inputSample = level[channel][sample];
                 gain = 1.0;
                 makeup = 1.0;
             }

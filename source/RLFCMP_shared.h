@@ -871,8 +871,10 @@ public:
 
     static inline double Logistics(double delta, double k)
     {
-        // double init = 1.0 / (1.0 + exp(k * -delta)); // This was way to CPU intensive
-        return 0.5 + 0.5 * tanh(k * delta); // Still CPU heavy, but less then exp()
+        return 1.0 / (1.0 + exp(-k * delta)); // This was way to CPU intensive // WTF? Now this is faster...
+        // Turns out, cmath with c++17, exp is faster
+        // return 0.5 + 0.5 * tanh(k * delta); // Still CPU heavy, but less then exp()
+        // return (delta > 0) ? 1.0 : 0.0;
     }
 };
 

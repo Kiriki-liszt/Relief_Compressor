@@ -1548,7 +1548,7 @@ tresult PLUGIN_API RLFCMP_Controller::notify(Vst::IMessage* message)
         if (message->getAttributes ()->getFloat (msgGainReduction, getValue) == kResultTrue)
         {
             vuGainReduction  = getValue;
-
+            /*
             if (!vuMeterList.empty())
             {
                 for (auto iter = vuMeterList.begin(); iter != vuMeterList.end(); iter++)
@@ -1569,6 +1569,7 @@ tresult PLUGIN_API RLFCMP_Controller::notify(Vst::IMessage* message)
                     }
                 }
             }
+             */
         }
         
         return kResultOk;

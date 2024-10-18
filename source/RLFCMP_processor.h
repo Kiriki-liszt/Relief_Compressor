@@ -56,8 +56,6 @@ public:
     
     //------------------------------------------------------------------------
 protected:
-    std::vecter<double> level[2];
-    
     // Internal functions ===========================================================
     template <typename SampleType>
     void processAudio (SampleType** inputs, SampleType** outputs, int32 numChannels, SampleRate getSampleRate, int32 sampleFrames);
@@ -105,6 +103,8 @@ protected:
     static SMTG_CONSTEXPR double detectorRls = 15.0; //msec ~= HOLD
     
     // Internal datastructures ===========================================================
+    std::vector<double> level[maxChannel];
+    
     SVF_12     SC_LF[maxChannel];
     SVF_12     SC_HF[maxChannel];
     
