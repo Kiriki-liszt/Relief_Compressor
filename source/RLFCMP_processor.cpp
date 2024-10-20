@@ -226,7 +226,7 @@ tresult PLUGIN_API RLFCMP_Processor::setupProcessing (Vst::ProcessSetup& newSetu
 
 uint32  PLUGIN_API RLFCMP_Processor::getLatencySamples()
 {
-    return lookaheadSize-1;
+    return lookaheadSize;
 }
 
 //------------------------------------------------------------------------
@@ -377,10 +377,11 @@ void RLFCMP_Processor::processAudio(
     // Process ===========================================================
     while (sampleFrames > sample)
     {
-        double sideChain[2] = {0.0, 0.0};
-        double HT_dtct[2]   = {0.0, 0.0};
-        double squared[2]   = {0.0, 0.0};
-        double rectified[2] = {0.0, 0.0};
+        //double sideChain[2] = {0.0, 0.0};
+        //double HT_dtct[2]   = {0.0, 0.0};
+        //double squared[2]   = {0.0, 0.0};
+        //double rectified[2] = {0.0, 0.0};
+        double level[2] = {0.0, 0.0};
         
         for (int32 channel = 0; channel < numChannels; channel++)
         {
@@ -405,62 +406,48 @@ void RLFCMP_Processor::processAudio(
                 }
                 double rms_s   = HT_state[channel][path_ref][io_y][y2][HT_stage - 1];
                 double rms_c   = HT_state[channel][path_sft][io_y][y1][HT_stage - 1];
-                HT_dtct[channel] = rms_s * rms_s + rms_c * rms_c; // Ideal input level, squared
                 
-                double vin = HT_dtct[channel];
+                double vin = std::hypot(rms_s, rms_c); // Ideal input level
                 double delta = vin - rectified_state[channel];
-                double pp = (delta > 0) ? 1.0 : 0.0; // smooth::Logistics(delta, k_detector); // (delta > 0) ? 1.0 : 0.0;
+                double pp = (delta >= 0) ? 1.0 : 0.0; // smooth::Logistics(delta, k_detector); // (delta > 0) ? 1.0 : 0.0;
                 double nn = 1.0 - pp;
-                //double g = (pp * 0.0 + nn * powrDtrRlsCoef);
+                // double g = (pp * sqrtDtrAtkCoef + nn * powrDtrRlsCoef);
+                double g = (pp * getTau(1.0, SampleRate) + nn * getTau(15.0, SampleRate));
                 //double g = (pp * sqrt(getTau(0.1, SampleRate)) + nn * powrDtrRlsCoef);
-                double g = vvv; //sqrt(getTau(1.0, SampleRate));
+                //double g = vvv; //sqrt(getTau(1.0, SampleRate));
                 hilbert_state[channel] = g * hilbert_state[channel] + (1.0 - g) * vin;
-                HT_dtct[channel] = hilbert_state[channel];
+                level[channel] = hilbert_state[channel] * hilbert_state[channel];
+                // level[channel] = vin;
                 // std::hypot(x, y) = sqrt(x^2 + y^2)
             }
-            switch (dType) {
-                case detectorPeak: default:
-                {
-                    // Full wave rectifier ===========================================================
-                    double vin = std::abs(inputSample);
-                    double delta = vin - rectified_state[channel];
-                    double pp = (delta >= 0) ? 1.0 : 0.0; // smooth::Logistics(delta, k_detector); // (delta > 0) ? 1.0 : 0.0;
-                    double nn = 1.0 - pp;
-                    double g = (pp * 0.0 + nn * dtrRlsCoef);
-                    rectified_state[channel] = g * rectified_state[channel] + (1.0 - g) * vin;
-                    rectified[channel] = rectified_state[channel];
-                    break;
-                }
-                case detectorRMS :
-                {
-                    // Square wave rectifier ===========================================================
-                    double vin = inputSample * inputSample;
-                    double delta = vin - squared_state[channel];
-                    double pp = (delta >= 0) ? 1.0 : 0.0; // smooth::Logistics(delta, k_detector*k_detector); // (delta > 0) ? 1.0 : 0.0;
-                    double nn = 1.0 - pp;
-                    double g = (pp * 0.0 + nn * powrDtrRlsCoef);
-                    squared_state[channel] = g * squared_state[channel] + (1.0 - g) * vin;
-                    squared[channel] = squared_state[channel];
-                    break;
-                }
+            else {
+                // Square wave rectifier ===========================================================
+                double vin = inputSample * inputSample;
+                double delta = vin - rectified_state[channel];
+                double pp = (delta >= 0) ? 1.0 : 0.0; // smooth::Logistics(delta, k_detector*k_detector); // (delta > 0) ? 1.0 : 0.0;
+                double nn = 1.0 - pp;
+                double g = (pp * 0.0 + nn * powrDtrRlsCoef);
+                rectified_state[channel] = g * rectified_state[channel] + (1.0 - g) * vin;
+                //rectified_state[channel] = std::max(vin, powrDtrRlsCoef * rectified_state[channel] + (1.0 - powrDtrRlsCoef) * vin);
+                // level[channel] = squared_state[channel];
+                
+                // std::max(vin, powrDtrRlsCoef * rectified_state[channel] + (1.0 − powrDtrRlsCoef) * vin);
+                
+                vin = rectified_state[channel];
+                squared_state[channel] = sqrtDtrAtkCoef * squared_state[channel] + (1.0 - sqrtDtrAtkCoef) * vin;
+                level[channel] = squared_state[channel];
             }
         }
         
         // Link stereo ===========================================================
-        double boldMonoSample   = 0.0;
-        double smoothMonoSample = 0.0;
-        double cleanMonoSample  = 0.0;
+        double monoSample   = 0.0;
         for (int32 channel = 0; channel < numChannels; channel++)
         {
-            boldMonoSample   += invNumChannels * rectified[channel];
-            smoothMonoSample += invNumChannels * squared[channel];
-            cleanMonoSample  += invNumChannels * HT_dtct[channel];
+            monoSample   += invNumChannels * level[channel];
         }
         for (int32 channel = 0; channel < numChannels; channel++)
         {
-            rectified[channel] = boldMonoSample;
-            squared[channel]   = smoothMonoSample;
-            HT_dtct[channel]   = cleanMonoSample;
+            level[channel] = monoSample;
         }
         
         for (int32 channel = 0; channel < numChannels; channel++)
@@ -484,7 +471,7 @@ void RLFCMP_Processor::processAudio(
                     case detectorPeak: default:  // It matches Metric Halo ChannelStrip MIO Comp, and Weiss DS1-MK3 if atk*3 & rls*2
                     {
                         // double r = getTau(paramRelease.ToPlain(pRelease) - detectorRls, SampleRate);
-                        double vin = rectified[channel];
+                        double vin = sqrt(level[channel]);
                         double delta = vin - envelope_state[channel];
                         double pp = smooth::Logistics(delta, k_rms); // (delta > 0) ? 1.0 : 0.0;
                         double nn = 1.0 - pp;
@@ -495,8 +482,7 @@ void RLFCMP_Processor::processAudio(
                     }
                     case detectorRMS: // Semi-true-RMS. a true RMS would use square-sum-normalize-sqrt, not this 1p-filter
                     {
-                        double vin = squared[channel];
-                        if (pHilbertEnable) vin = HT_dtct[channel];
+                        double vin = level[channel];
                         double delta = vin - envelope_state[channel];
                         double pp = smooth::Logistics(delta, k_rms); // (delta > 0) ? 1.0 : 0.0;
                         double nn = 1.0 - pp;
@@ -523,13 +509,13 @@ void RLFCMP_Processor::processAudio(
                 if (pLookaheadEnable)
                 {
                     lookAheadDelayLine[channel].push_back(gain);
-                    gain = std::transform_reduce(lookAheadDelayLine[channel].end() - lookAhead_local, lookAheadDelayLine[channel].end(), LAH_coef, 0.0);
+                    gain = std::transform_reduce(lookAheadDelayLine[channel].end() - 1 - lookAhead_local, lookAheadDelayLine[channel].end() - 1, LAH_coef, 0.0);
                     lookAheadDelayLine[channel].pop_front();
                 }
                 else
                 {
                     lookAheadDelayLine[channel].push_back(gain);
-                    gain = *(lookAheadDelayLine[channel].end() - lookAhead_local);
+                    gain = *(lookAheadDelayLine[channel].end() - 1 - lookAhead_local);
                     lookAheadDelayLine[channel].pop_front();
                 }
                 
@@ -540,10 +526,10 @@ void RLFCMP_Processor::processAudio(
             else
             {
                 switch (dType) {
-                    case detectorPeak: default: // It matches Sonnox Oxford Dynamics, Cenozoix if atk*2, rls*2
+                    case detectorPeak: default: // It matches Sonnox Oxford Dynamics
                     {
                         // Transfer Curve ===========================================================
-                        env = DecibelConverter::ToDecibel(rectified[channel]);
+                        env = DecibelConverter::ToDecibel(sqrt(level[channel]));
                         
                         double overshoot = env - (threshold);
                         
@@ -568,7 +554,7 @@ void RLFCMP_Processor::processAudio(
                     case detectorRMS : // Ozone RMS
                     {
                         // Transfer Curve ===========================================================
-                        env = DecibelConverter::ToDecibel(sqrt(squared[channel]));
+                        env = DecibelConverter::ToDecibel(sqrt(level[channel]));
                         
                         double overshoot = env - (threshold);
                         
@@ -600,13 +586,13 @@ void RLFCMP_Processor::processAudio(
                 if (pLookaheadEnable)
                 {
                     lookAheadDelayLine[channel].push_back(gain);
-                    gain = std::transform_reduce(lookAheadDelayLine[channel].end() - lookAhead_local, lookAheadDelayLine[channel].end(), LAH_coef, 0.0);
+                    gain = std::transform_reduce(lookAheadDelayLine[channel].end() - 1 - lookAhead_local, lookAheadDelayLine[channel].end() - 1, LAH_coef, 0.0);
                     lookAheadDelayLine[channel].pop_front();
                 }
                 else
                 {
                     lookAheadDelayLine[channel].push_back(gain);
-                    gain = *(lookAheadDelayLine[channel].end() - lookAhead_local);
+                    gain = *(lookAheadDelayLine[channel].end() - 1 - lookAhead_local);
                     lookAheadDelayLine[channel].pop_front();
                 }
                 
@@ -622,7 +608,7 @@ void RLFCMP_Processor::processAudio(
             }
 
             latencyDelayLine[channel].push_back(inputSample);
-            inputSample = *(latencyDelayLine[channel].end() - lookAhead_local);
+            inputSample = *(latencyDelayLine[channel].end() - 1 - lookAhead_local);
             latencyDelayLine[channel].pop_front();
 
             double dry = inputSample;
@@ -690,8 +676,10 @@ void RLFCMP_Processor::call_after_SR_changed ()
     dtrAtkCoef  = getTau(detectorAtk,  projectSR);
     dtrRlsCoef  = getTau(detectorRls,  projectSR);
     
-    atkCoef    = getTau(paramAttack. ToPlain(pAttack),  projectSR);
+    atkCoef    = getTau(paramAttack. ToPlain(pAttack) - 0.35,  projectSR); // compensate at (half of lookahead) == (detector attack)
     rlsCoef    = getTau(paramRelease.ToPlain(pRelease), projectSR);
+    
+    if (pHilbertEnable) atkCoef    = getTau(paramAttack. ToPlain(pAttack) - 0.499,  projectSR);
     
     for (int32 channel = 0; channel < maxChannel; channel++)
     {
@@ -743,7 +731,7 @@ void RLFCMP_Processor::call_after_parameter_changed ()
     dType      = paramDetectorType.ToPlainList(pDType);
     scTopology = paramSidechainTopology.ToPlainList(pSCTopology);
     
-    atkCoef    = getTau(paramAttack. ToPlain(pAttack),  projectSR);
+    atkCoef    = getTau(paramAttack. ToPlain(pAttack) - 0.35,  projectSR);
     rlsCoef    = getTau(paramRelease.ToPlain(pRelease), projectSR);
     
     for (int32 channel = 0; channel < maxChannel; channel++)

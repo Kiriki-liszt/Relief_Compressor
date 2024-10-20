@@ -99,7 +99,9 @@ protected:
     static SMTG_CONSTEXPR double peakEnvDecay = 0.4; //sec
     static SMTG_CONSTEXPR double peakRMSDecay = 0.3; //sec
     
-    static SMTG_CONSTEXPR double detectorAtk = 0.05; //msec
+    // timing of detectors are important then I thought
+    // if attack is set to 0, 'tone' of compressor feels like it's smashing at 0 attack, even with attack knob backed off
+    static SMTG_CONSTEXPR double detectorAtk = 0.4; //msec, about size of lookahead(fixed to 0.5ms)
     static SMTG_CONSTEXPR double detectorRls = 15.0; //msec ~= HOLD
     
     // Internal datastructures ===========================================================
