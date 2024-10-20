@@ -183,13 +183,17 @@ private:
 
 
 
-
-
+/**
+ Based on;
+ Simultaneous solving of all outputs of Linear SVF using trapezoidal integration in state space form
+ © Andrew Simper, Cytomic, 2021, andy@cytomic.com
+ last updated: 24th Sep 2021
+ https://cytomic.com/files/dsp/SvfLinearTrapAllOutputs.pdf
+**/
 
 class SVF_12
 {
 public:
-
     static SMTG_CONSTEXPR int tHighPass  = 0;
     static SMTG_CONSTEXPR int tBandPass  = 1;
     static SMTG_CONSTEXPR int tLowPass   = 2;
@@ -314,8 +318,8 @@ public:
 
         // Denominator complex
         double c_dzsq = (1.0 + k * g + gsq);
-        double c_dz = (-2.0 + 2.0 * gsq);
-        double c_d = (1.0 + k * -g + gsq);
+        double c_dz   = (-2.0 + 2.0 * gsq);
+        double c_d    = (1.0 + k * -g + gsq);
         dr = zsq_r * c_dzsq + zr * c_dz + c_d;
         di = zsq_i * c_dzsq + zi * c_dz;
         // Numerator / Denominator
@@ -347,12 +351,6 @@ public:
     double ic2eq = 0.0;
 };
 
-
-
-
-
-
-
 class SVF_6 {
 public:
     static SMTG_CONSTEXPR int tPass  = 0;
@@ -361,24 +359,6 @@ public:
     
     static SMTG_CONSTEXPR int rLow   = 0;
     static SMTG_CONSTEXPR int rHigh  = 1;
-    
-    typedef struct ds
-    {
-        bool   In = true;
-        double Hz = 100.0;
-        double dB = 0.0;
-        int    Type = tPass;
-        int    Range = rLow;
-        double Fs = 48000.0;
-
-        double w = Hz * M_PI / Fs;
-        double g = tan(w);
-
-        double m0 = 1.0, m2 = 1.0;
-        double v0 = 0.0, v2 = 0.0;
-        double t0 = 0.0, t2 = 0.0;
-        double iceq = 0.0;
-    } dataset;
 
     SVF_6()
     {
@@ -387,61 +367,61 @@ public:
 
     void initSVF()
     {
-        flt.iceq = 0.0;
+        iceq = 0.0;
     }
     
-    void   setIn(bool v) { flt.In = v; }
-    bool   getIn() const { return flt.In; }
+    void   setIn(bool v) { In = v; }
+    bool   getIn() const { return In; }
     
-    void   setFreq(double v) { flt.Hz = v; }
-    double getFreq() const { return flt.Hz; }
+    void   setFreq(double v) { Hz = v; }
+    double getFreq() const { return Hz; }
     
-    void   setGain(double v) { flt.dB = v; }
-    double getGain() const { return flt.dB; }
+    void   setGain(double v) { dB = v; }
+    double getGain() const { return dB; }
     
-    void   setType(int v) { flt.Type = v; }
-    int    getType() const { return flt.Type; }
+    void   setType(int v) { Type = v; }
+    int    getType() const { return Type; }
     
-    void   setRange(int v) { flt.Range = v; }
-    int    getRange() const { return flt.Range; }
+    void   setRange(int v) { Range = v; }
+    int    getRange() const { return Range; }
 
-    void   setFs(double v) { flt.Fs = v; }
-    double getFs() const { return flt.Fs; }
+    void   setFs(double v) { Fs = v; }
+    double getFs() const { return Fs; }
     
     void setSVF(double In, double Hz, double dB, int type, double Fs)
     {
-        flt.In    = In ? 1 : 0;
-        flt.Hz    = Hz;
-        flt.dB    = dB;
-        flt.Type  = type;
-        flt.Fs    = Fs;
+        In    = In ? 1 : 0;
+        Hz    = Hz;
+        dB    = dB;
+        Type  = type;
+        Fs    = Fs;
 
         makeSVF();
     }
 
     void makeSVF()
     {
-        if (flt.Hz > flt.Fs / 2.0) flt.Hz = flt.Fs / 2.0;
-        flt.w = flt.Hz * M_PI / flt.Fs;
-        flt.g = tan(flt.w);
-        double A = pow(10.0, flt.dB / 40.0);
+        if (Hz > Fs / 2.0) Hz = Fs / 2.0;
+        w = Hz * M_PI / Fs;
+        g = tan(w);
+        double A = pow(10.0, dB / 40.0);
         double AmA = A * A;
         
-        if (flt.Range == rLow)
+        if (Range == rLow)
         {
-            switch (flt.Type)
+            switch (Type)
             {
-                case tPass:  flt.m0 = 1;   flt.m2 = 0;   break;
-                case tShelf: flt.m0 = 1;   flt.m2 = AmA; break;
+                case tPass:  m0 = 1;   m2 = 0;   break;
+                case tShelf: m0 = 1;   m2 = AmA; break;
                 default: break;
             }
         }
         else // if (flt.Range == rHigh)
         {
-            switch (flt.Type)
+            switch (Type)
             {
-                case tPass:  flt.m0 = 0;   flt.m2 = 1;   break; // HighCut, LowPass
-                case tShelf: flt.m0 = AmA; flt.m2 = 1;   break;
+                case tPass:  m0 = 0;   m2 = 1;   break; // HighCut, LowPass
+                case tShelf: m0 = AmA; m2 = 1;   break;
                 default: break;
             }
         }
@@ -452,21 +432,21 @@ public:
     inline double computeSVF (double vin)
     {
         // disable v1 stage
-        flt.t0 = vin - flt.iceq;
-        flt.v0 = flt.t0 / (1.0 + flt.g);// gt0 * t0;
-        flt.t2 = flt.g * flt.v0;
-        flt.v2 = flt.iceq + flt.t2;
-        flt.iceq += 2.0 * flt.t2;
+        t0 = vin - iceq;
+        v0 = t0 / (1.0 + g);// gt0 * t0;
+        t2 = g * v0;
+        v2 = iceq + t2;
+        iceq += 2.0 * t2;
 
-        if (flt.In != 1) return vin;
-        return flt.m0 * flt.v0 + flt.m2 * flt.v2;
+        if (In != 1) return vin;
+        return m0 * v0 + m2 * v2;
     };
     
     inline double mag_response (double freq)
     {
-        if (!flt.In) return 1.0;
+        if (!In) return 1.0;
 
-        double ONE_OVER_SAMPLE_RATE = 1.0 / flt.Fs;
+        double ONE_OVER_SAMPLE_RATE = 1.0 / Fs;
 
         // exp(complex(0.0, -2.0 * pi) * frequency / sampleRate)
         double _zr = (0.0) * freq * ONE_OVER_SAMPLE_RATE;
@@ -480,12 +460,12 @@ public:
         double dr = 0, di = 0;
 
         // Numerator complex
-        nr = zr * (-flt.m0 /* + m1 * (g - 1) */ + flt.m2 * flt.g) + (flt.m0 /* + m1 * (g + 1) */ + flt.m2 * flt.g);
-        ni = zi * (-flt.m0 /* + m1 * (g - 1) */ + flt.m2 * flt.g);
+        nr = zr * (-m0 + m2 * g) + (m0 + m2 * g);
+        ni = zi * (-m0 + m2 * g);
 
         // Denominator complex
-        dr = zr * (flt.g - 1) + (flt.g + 1);
-        di = zi * (flt.g - 1);
+        dr = zr * (g - 1.0) + (g + 1.0);
+        di = zi * (g - 1.0);
 
         // Numerator / Denominator
         double norm = dr * dr + di * di;
@@ -497,14 +477,27 @@ public:
 
 // will it inline?
 // private:
-    dataset flt;
+    bool   In = true;
+    double Hz = 100.0;
+    double dB = 0.0;
+    int    Type = tPass;
+    int    Range = rLow;
+    double Fs = 48000.0;
+
+    double w = Hz * M_PI / Fs;
+    double g = tan(w);
+
+    double m0 = 1.0, m2 = 1.0;
+    double v0 = 0.0, v2 = 0.0;
+    double t0 = 0.0, t2 = 0.0;
+    double iceq = 0.0;
 };
 
 class LevelEnvelopeFollower
 {
 public:
     static SMTG_CONSTEXPR int peakEnv = 0;
-    static SMTG_CONSTEXPR int rmsEnv = 1;
+    static SMTG_CONSTEXPR int rmsEnv  = 1;
     
     LevelEnvelopeFollower(int type = peakEnv, double decaySec = 0.5)
     : Type(type)
@@ -512,10 +505,6 @@ public:
     {
         prepare(48000.0);
         state = 0.0;
-    }
-
-    ~LevelEnvelopeFollower()
-    {
     }
 
     void prepare(const double& fs)
@@ -542,7 +531,7 @@ public:
         else return state;
     }
 
-// private:
+// private: // will it inline?
     double DecayInSeconds = 0.5;
     double DecayCoef = 0.99992;
 

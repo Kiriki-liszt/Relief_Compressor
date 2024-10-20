@@ -319,7 +319,11 @@ void TransferCurveView::draw(CDrawContext* _pContext)
         path->beginSubpath(VSTGUI::CPoint(r.left - 1, r.bottom));
         for (int x = -1; x <= width + 1; x++)
         {
-            double x_dB = -DB_Range * (1.0 - x * inv_width); // -60 -> 0
+            // x * inv_width = [0 ~ 1]
+            // 1.0 - x * inv_width = [1 ~ 0]
+            // -DB_Range == -60
+            // -DB_Range * (1.0 - x * inv_width) = [-60 ~ 0]
+            double x_dB = -DB_Range * (1.0 - x * inv_width);
 
             double overshoot = x_dB - threshold;
             
@@ -332,7 +336,10 @@ void TransferCurveView::draw(CDrawContext* _pContext)
                 gain = slope * overshoot;
 
             double y_dB = x_dB + gain + makeup;
-            y_dB = mix * y_dB + (1.0 - mix) * x_dB; // -60 ~ 0
+            double a = yg331::DecibelConverter::ToGain(y_dB);
+            double b = yg331::DecibelConverter::ToGain(x_dB);
+            y_dB = mix * a + (1.0 - mix) * b; // -60 ~ 0
+            y_dB = yg331::DecibelConverter::ToDecibel(y_dB);
             
             double y = -y_dB * Inv_DB_R; // 1 ~ 0
             y = (1.0 - y) * height;
@@ -1145,6 +1152,22 @@ tresult PLUGIN_API RLFCMP_Controller::initialize (FUnknown* context)
     ParamSidechainTopology->appendString (STR16("LIN"));
     ParamSidechainTopology->appendString (STR16("LOG"));
     parameters.addParameter (ParamSidechainTopology);
+    
+    tag          = kParamHilbertEnable;
+    auto* ParamHilbertEnable = new Vst::StringListParameter(STR16("Hilbert Enable"), tag);
+    ParamHilbertEnable->appendString (STR16("OFF"));
+    ParamHilbertEnable->appendString (STR16("ON"));
+    ParamHilbertEnable->getInfo().defaultNormalizedValue = ParamHilbertEnable->toNormalized(1.0);
+    ParamHilbertEnable->setNormalized(ParamHilbertEnable->toNormalized(1.0));
+    parameters.addParameter (ParamHilbertEnable);
+    
+    tag          = kParamLookaheadEnable;
+    auto* ParamLookaheadEnable = new Vst::StringListParameter(STR16("Lookahead Enable"), tag);
+    ParamLookaheadEnable->appendString (STR16("OFF"));
+    ParamLookaheadEnable->appendString (STR16("ON"));
+    ParamLookaheadEnable->getInfo().defaultNormalizedValue = ParamLookaheadEnable->toNormalized(1.0);
+    ParamLookaheadEnable->setNormalized(ParamLookaheadEnable->toNormalized(1.0));
+    parameters.addParameter (ParamLookaheadEnable);
 
     tag          = kParamAttack;
     flags        = Vst::ParameterInfo::kCanAutomate;
@@ -1165,14 +1188,6 @@ tresult PLUGIN_API RLFCMP_Controller::initialize (FUnknown* context)
     auto* ParamRelease = new LogRangeParameter(STR16("Release"), tag, STR16("ms"), minPlain, maxPlain, defaultPlain, stepCount, flags);
     ParamRelease->setPrecision(1);
     parameters.addParameter(ParamRelease);
-    
-    tag          = kParamLookaheadEnable;
-    auto* ParamLookaheadEnable = new Vst::StringListParameter(STR16("Lookahead Enable"), tag);
-    ParamLookaheadEnable->appendString (STR16("OFF"));
-    ParamLookaheadEnable->appendString (STR16("ON"));
-    ParamLookaheadEnable->getInfo().defaultNormalizedValue = ParamLookaheadEnable->toNormalized(1.0);
-    ParamLookaheadEnable->setNormalized(ParamLookaheadEnable->toNormalized(1.0));
-    parameters.addParameter (ParamLookaheadEnable);
 
     tag          = kParamThreshold;
     flags        = Vst::ParameterInfo::kCanAutomate;

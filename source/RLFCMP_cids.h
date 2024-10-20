@@ -37,9 +37,10 @@ enum {
     // Envelope Detection
     kParamDetectorType,
     kParamSidechainTopology,
+    kParamHilbertEnable,
+    kParamLookaheadEnable,
     kParamAttack,
     kParamRelease,
-    kParamLookaheadEnable,
 
     // Non-Linear Transfer Curve
     kParamThreshold,

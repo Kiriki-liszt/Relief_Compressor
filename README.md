@@ -12,6 +12,11 @@ Comes in three type - Bold, Smooth, Clean.
 LookAhead about 0.4ms.  
 It uses FIR as smoother described in Waves Audio patent(US6535846B1, Expired).  
 
+Peak Linear - Metric Halo ChannelStrip MIO Comp  
+Peak Logarithmic - Sonnox Oxford Dynamics  
+RMS Linear - AMEK Mastering Compressor  
+RMS Logarithmic - SSL Native Bus Compressor 2  
+
 ## Types of Detectors  
 
 ### Bold  
@@ -118,3 +123,5 @@ Have to check out how other HW comprssor's harmonic pattern looks like.
 When compressing, harmonic distortion happens and fills up a removed loudness.  
 In Clean type, that harmonic distortion is surpressed, leading to a sence of feel that it grabs more then it should.  
 Our ears are used to hear that volume drop compensation by harmonic distortion, so when it doesn't, it feels somewhat unexpected.  
+
+UADx dbx 160 has some kind of Linear RMS, Hilbert detection going on...  

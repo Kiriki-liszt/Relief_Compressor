@@ -103,7 +103,7 @@ protected:
     static SMTG_CONSTEXPR double detectorRls = 15.0; //msec ~= HOLD
     
     // Internal datastructures ===========================================================
-    std::vector<double> level[maxChannel];
+    std::vector<double> sidechain_EQed[maxChannel];
     
     SVF_12     SC_LF[maxChannel];
     SVF_12     SC_HF[maxChannel];
@@ -156,9 +156,10 @@ protected:
     
     ParamValue pDType      = paramDetectorType.ToNormalized(dftDetectorType);
     ParamValue pSCTopology = paramSidechainTopology.ToNormalized(dftSidechainTopology);
+    bool       pHilbertEnable   = true;
+    bool       pLookaheadEnable = true;
     ParamValue pAttack     = paramAttack.   ToNormalized(dftAttack);
     ParamValue pRelease    = paramRelease.  ToNormalized(dftRelease);
-    bool       pLookaheadEnable = true;
     
     ParamValue pThreshold  = paramThreshold.ToNormalized(dftThreshold);
     ParamValue pRatio      = paramRatio.    ToNormalized(dftRatio);
@@ -199,8 +200,8 @@ protected:
     ParamValue output      = DecibelConverter::ToGain(paramOutput.ToPlain(pOutput));
     
     // DC Blocker
-    double DC_state_x[2];
-    double DC_state_y[2];
+    // double DC_state_x[2];
+    // double DC_state_y[2];
 };
 
 //------------------------------------------------------------------------
