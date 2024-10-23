@@ -14,7 +14,61 @@ Windows and Mac, VST3 and AU.
 
 [![Static Badge](https://img.shields.io/badge/coffee%20maybe%3F%20%3D%5D%20-gray?style=for-the-badge&logo=buy-me-a-coffee)](https://buymeacoffee.com/kirikiaris)  
 
-<img src="https://github.com/Kiriki-liszt/Relief_Compressor/blob/main/screenshot.png?raw=true"  width="600"/>  
+<img src="https://github.com/Kiriki-liszt/Relief_Compressor/blob/main/screenshot/Relief%20Compressor%20Main%20page.png?raw=true"  width="600"/>
+<img src="https://github.com/Kiriki-liszt/Relief_Compressor/blob/main/screenshot/Relief%20Compressor%20SC%20page.png?raw=true"  width="600"/>  
+
+## Windows  
+
+- x64  
+
+## macOS  
+
+- 10.13(High Sierra) to 15.0(Sequoia)  
+
+## How to use  
+
+1. Windows
+
+Unzip Win.zip from latest release and copy to "C:\Program Files\Common Files\VST3".  
+
+2. MacOS(Intel tested, Apple Silicon not tested).  
+
+Unzip MacOS.zip from latest release and copy vst3 to "/Library/Audio/Plug-Ins/VST3" and component to "/Library/Audio/Plug-Ins/Components".  
+
+> If it doesn't go well, configure security options in console as  
+>
+> ``` console  
+> sudo xattr -r -d com.apple.quarantine /Library/Audio/Plug-Ins/VST3/Relief_Compressor.vst3  
+> sudo xattr -r -d com.apple.quarantine /Library/Audio/Plug-Ins/Components/Relief_Compressor.component
+>
+> sudo codesign --force --sign - /Library/Audio/Plug-Ins/VST3/Relief_Compressor.vst3  
+> sudo codesign --force --sign - /Library/Audio/Plug-Ins/Components/Relief_Compressor.component
+> ```  
+>
+> tested by @jonasborneland [here](https://github.com/Kiriki-liszt/JS_Inflator_to_VST2_VST3/issues/12#issuecomment-1616671177)
+
+## Licensing  
+
+Relief EQ is using GPL v3 license.  
+
+### VST  
+
+> Q: I would like to share the source code of my VST 3 plug-in/host on GitHub or other such platform.  
+>
+> - You can choose the GPLv3 license and feel free to share your plug-ins/host's source code including or referencing the VST 3 SDK's sources on GitHub.  
+> - **You are allowed to provide a binary form of your plug-ins/host too, provided that you provide its source code as GPLv3 too.**  
+> - Note that you have to follow the Steinberg VST usage guidelines.  
+>  
+> <https://steinbergmedia.github.io/vst3_dev_portal/pages/FAQ/Licensing.html>  
+
+![VST Logo](https://github.com/Kiriki-liszt/Sky_Blue_EQ4/assets/107096260/142e3c12-cd5f-415d-9b72-8b4f04419633)
+
+VSTSDK 3.7.9 used  
+VSTGUI 4.12 used  
+
+## Version logs
+
+v0.1.0 : intial beta.  
 
 ## Detectors  
 
