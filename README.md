@@ -1,127 +1,75 @@
-# Relief_Compressor  
+# Relief Compressor  
 
-Simple compressor for typical use.  
-Comes in three type - Bold, Smooth, Clean.  
+Relief Compressor is a compressor for everyday tasks, anywhere from mixing a track to master bus.  
 
-|  Type  | Detecter |
-|:------:|:--------:|
-|  Bold  |   Peak   |
-| Smooth |    RMS   |
-|  Clean |  Hilbert |
+Runs in double precision 64-bit internal processing. Also double precision input / output if supported.  
+Selectable Detector path in Peak/RMS and Linear/Logarithmic options.  
+Dedicated sidechain-EQ page with 2 band EQ, pass filter and shelf selectable.  
+Fixed Look-Ahead at 0.5ms. It uses Kaiser-Bessel FIR as lookahead smoother.  
 
-LookAhead about 0.4ms.  
-It uses FIR as smoother described in Waves Audio patent(US6535846B1, Expired).  
+Windows and Mac, VST3 and AU.  
 
-Peak Linear - Metric Halo ChannelStrip MIO Comp  
-Peak Logarithmic - Sonnox Oxford Dynamics  
-RMS Linear - AMEK Mastering Compressor  
-RMS Logarithmic - SSL Native Bus Compressor 2  
+[![GitHub Release](https://img.shields.io/github/v/release/kiriki-liszt/Relief_Compressor?style=flat-square&label=Get%20latest%20Release)](https://github.com/Kiriki-liszt/Relief_Compressor/releases/latest)
+[![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/kiriki-liszt/Relief_Compressor/total?style=flat-square&label=total%20downloads&color=blue)](https://github.com/Kiriki-liszt/Relief_Compressor/releases/latest)  
 
-## Types of Detectors  
+[![Static Badge](https://img.shields.io/badge/coffee%20maybe%3F%20%3D%5D%20-gray?style=for-the-badge&logo=buy-me-a-coffee)](https://buymeacoffee.com/kirikiaris)  
 
-### Bold  
+<img src="https://github.com/Kiriki-liszt/Relief_Compressor/blob/main/screenshot.png?raw=true"  width="600"/>  
 
-It's a typical Peak detector.  
+## Detectors  
 
-- Metric Halo ChannelStrip MIO compressor
-- Weiss DS1-MK3 (yes, it is)
-- Sononx Oxford Dynamics
-- bx SSL, Waves SSL EV2
-- UADx SSL G Bus Compressor
-- Waves Audio R-comp
+### Peak  
 
-### Smooth  
+Typical track compressor, widly used in consoles.  
+It applies envelope as detected.  
 
-It's a semi-true-RMS detector, using 1-pole filter.  
+### RMS  
+
+Bit more smooth detector, used in buses and mastering.  
+I used a semi-true-RMS detector, appliing envelope in squared manner using 1-pole filter.  
 A true RMS would use square-normalize-sum-sqrt.  
-
-- AMEK Mastering Compressor
-- SSL Native Bus Compressor 2
-- bx Shadow Hills Mastering Comp
-- Ozone 11 Dynamics (RMS)
-
-### Clean  
-
-It's a Hilbert detector used in RMS style.  
-It uses two path with about 90-degree phase difference.  
-If both path's signal are square-add-sqrted, it gets ideal level envelope.  
-
-- FabFilter Pro-C 2 Mastering
-- TDR Kotelvnikov RMS
-- Ozone 11 Dynamics (Peak)
-
-## Sidechain Topology  
 
 ### Linear  
 
-It detects level in linear gain scale, and then calculates gain reduction.  
-Not typical, but certainly favorable.  
-
-- Weiss DS1-MK3
-- Metric Halo ChannelStrip MIO compressor
-- AMEK Mastering Compressor
-- bx SSL, Waves SSL EV2
-- bx Shadow Hills Mastering Comp
+Detects level in linear gain scale, and then calculates gain reduction.  
+It lets fast peaks go through, sounding more open and punchy.  
 
 ### Logarithmic  
 
-It calculates gain reduction in log dB, and applies level envelope to gain reduction.  
-More common method to use.  
+Calculates gain reduction first in log dB, and applies level envelope to gain reduction.  
+More accurate attack timing and good for peak comtrolling.  
 
-- FabFilter Pro-C 2
-- Sonnox Oxford Dynamics
-- TDR Kotelvnikov
-- SSL Native Channel Strip 2
-- UADx SSL G Bus Comp, E Channel Strip
+## Lookahead  
+
+Typically lookahead is described as simply delaying main path by some amount.  
+It's true but we need more to make it better.  
+
+After delaying main signal path, we can apply smoothing filter to detector path.  
+This way, the fastest peak reduction fades-in and reaches maximum reduction in sync with main signal.  
+Smoothing can be appied many ways, simple lowpass might work, I choose FIR filtering.  
+std::transform_reduce works well, since it supports parallel computation.  
 
 ## Why Attack and Release affects Threshold?  
 
-It happens if ripples of detector are not controlled, but it's in sync with signal path so that ripple does not become a problem.  
-It can be solved by appling zero-attack moderate-release to rectified signal.  
-In case of 'Clean' type, it uses Hilbert transform so this ripple is non-existent.  
-However, it overshoots so it need a mild smoother.  
+It happens if detected signal is rectified but not smoothed.  
+Also it gets more apparent in single decoupled branching detectors, where release cannot smooth out rectified detector signal.  
+
+It can be solved by appling sub-1ms-attack few-ms-release to rectified signal.  
 
 Need to know is, that it changes harmonic pattern generated from compressor.  
 Reduction rate of harmonics are more steep.  
-Since I don't have a full size HW compressor(what a shame), I have to use MXR studio comp.  
-MXR studio compressor is copy of UAD 1176 LN version.  
-That compressor had harmonic pattern of one-stage level detection.  
-BUT this is analog gear, it does not worry about aliasing, so it's not a problem...  
 
-Have to check out how other HW comprssor's harmonic pattern looks like.  
+## Hilbert detector  
 
-### List of timing independent threshold(two-stage level detection) compressors  
+It uses two path with about 90-degree phase difference.  
+If both path's signal are square-add-sqrted, it gets ideal level envelope.  
+This creates very clean harmonics, So I tuned it to have same amount of low harmonic, but less high harmonics.  
 
-- Sonnox Oxford Dynamics
-- Waves Audio R-Comp
-- Weiss DS1-MK3
-- Ozone 11 Dynamics
-- Pro-C 2 Mastering
-- AMEK Mastering Compressor
-- Maag MAGNUM-K
-- TBTECH Cenozoix Compressor
-- TBProAudio Impress 3
-- and many analog compressors
+However, it causes overshoots and has issue with square signal.  
+It somehow reacts like bandpassed detector signal, so this is given as an option.  
 
-### List of timing dependent threshold(one-stage level detection) compressors  
-
-- TDR Kotelnikov
-- Metric Halo ChannelStrip
-- Pro-C 2 Clean
-- most of Waves Audio Compressors
-- elysia alpha
-- BX Shadow Hills Mastering Comp
-- Kiive XTComp
-- SPL IRON
-- SSL Native X-Comp
-- SSL Native Bus Compressor 2
-- UADx SSL G Bus Compressor
-- and many other digital compressors
-
-## Why Clean type sounds different?  
+### It sounds more compressed then others  
 
 When compressing, harmonic distortion happens and fills up a removed loudness.  
-In Clean type, that harmonic distortion is surpressed, leading to a sence of feel that it grabs more then it should.  
+With Hilbert detector, that harmonic distortion is surpressed, leading to a sence of feel that it grabs more then it should.  
 Our ears are used to hear that volume drop compensation by harmonic distortion, so when it doesn't, it feels somewhat unexpected.  
-
-UADx dbx 160 has some kind of Linear RMS, Hilbert detection going on...  

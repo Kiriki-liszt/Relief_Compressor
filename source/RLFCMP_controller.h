@@ -132,6 +132,9 @@ public:
 
     void   setMix(double value) { if (mix != value) { mix = value; setDirty(true); } }
     double getMix() const { return mix; }
+    
+    void   setVuInMono(double value) { if (vuInMono != value) { vuInMono = value; setDirty(true); } }
+    double getVuInMono() const { return vuInMono; }
 
     // get/set Attributes
     void   setBackColor(CColor color) { if (BackColor != color) { BackColor = color; setDirty(true); } }
@@ -139,6 +142,9 @@ public:
 
     void   setLineColor(CColor color) { if (LineColor != color) { LineColor = color; setDirty(true); } }
     CColor getLineColor() const { return LineColor; }
+
+    void   setLineOffColor(CColor color) { if (LineOffColor != color) { LineOffColor = color; setDirty(true); } }
+    CColor getLineOffColor() const { return LineOffColor; }
 
     // overrides
     void setDirty(bool state) override { CView::setDirty(state); };
@@ -150,12 +156,13 @@ public:
     CLASS_METHODS(TransferCurveView, CControl)
 
 protected:
-    ~TransferCurveView() noexcept override
-    {
-    };
+    ~TransferCurveView() noexcept override {};
 
     CColor        BackColor;
     CColor        LineColor;
+    CColor        LineOffColor;
+    
+    double vuInMono = -60.0;
 
     double threshold = yg331::dftThreshold;
     double knee      = yg331::dftKnee;
@@ -175,7 +182,8 @@ protected:
 //------------------------------------------------------------------------
 //  Click to Reset Param Display View
 //------------------------------------------------------------------------
-class ClickResetParamDisplay : public CParamDisplay {
+class ClickResetParamDisplay : public CParamDisplay
+{
 public:
     enum updateStyle
     {
@@ -229,28 +237,16 @@ public:
     };
     
     void onIdle() override { invalid(); };
+    
+    CLASS_METHODS(ClickResetParamDisplay, CParamDisplay)
  
 protected:
+    ~ClickResetParamDisplay() noexcept override {};
+    
     int32_t _style;
     float   directValue = 0.0;
     bool    over = false;
     CColor  originalBack;
-};
-
-//------------------------------------------------------------------------
-//  Metering reset container
-//------------------------------------------------------------------------
-class MeterViewContainer : public CViewContainer
-{
-public:
-    MeterViewContainer(const CRect& size) : CViewContainer(size) {};
-    void onMouseDownEvent(MouseDownEvent& event) override {
-        for (auto& child : getChildren())
-        {
-            child->onMouseDownEvent(event);
-        }
-        CViewContainer::onMouseDownEvent(event);
-    };
 };
 
 //------------------------------------------------------------------------
@@ -282,6 +278,8 @@ public:
     
     CColor getVuOffColor() const { return vuOffColor; }
     void   setVuOffColor(CColor color) { if (vuOffColor != color) { vuOffColor = color; setDirty(true); } }
+    
+    void setValue_(float v) {plainValue = v;}
 
     // overrides
     void setDirty(bool state) override { CView::setDirty(state); };
@@ -306,6 +304,8 @@ protected:
 
     CRect    rectOn;
     CRect    rectOff;
+    
+    double plainValue = 0.0;
 };
 }
 
@@ -318,7 +318,7 @@ class VuMeterController;
 //------------------------------------------------------------------------
 //  RLFCMP_Controller
 //------------------------------------------------------------------------
-class RLFCMP_Controller : public Steinberg::Vst::EditControllerEx1, public VSTGUI::VST3EditorDelegate, VSTGUI::ViewListenerAdapter
+class RLFCMP_Controller : public Steinberg::Vst::EditControllerEx1, public VSTGUI::VST3EditorDelegate
 {
 public:
 //------------------------------------------------------------------------
@@ -353,28 +353,6 @@ public:
     VSTGUI::IController* createSubController (VSTGUI::UTF8StringPtr name,
                                               const VSTGUI::IUIDescription* description,
                                               VSTGUI::VST3Editor* editor) SMTG_OVERRIDE;
-    VSTGUI::CView* verifyView (VSTGUI::CView* view,
-                               const VSTGUI::UIAttributes& attributes,
-                               const VSTGUI::IUIDescription* description,
-                               VSTGUI::VST3Editor* editor) SMTG_OVERRIDE
-    {
-        if (auto* control = dynamic_cast<VSTGUI::MyVuMeter*>(view); control)
-        {
-            vuMeterList.push_back(control);
-            view->registerViewListener (this);
-            return view;
-        }
-        return VSTGUI::VST3EditorDelegate::verifyView(view, attributes, description, editor);
-    }
-    void viewWillDelete (VSTGUI::CView* view) SMTG_OVERRIDE
-    {
-        auto it = std::find (vuMeterList.begin (), vuMeterList.end (), view);
-        if (it != vuMeterList.end ())
-        {
-            view->unregisterViewListener (this);
-            vuMeterList.erase (it);
-        }
-    }
     //---from ComponentBase-----
     // EditController
     Steinberg::tresult PLUGIN_API notify(Steinberg::Vst::IMessage* message) SMTG_OVERRIDE;
@@ -457,8 +435,6 @@ public:
             transferCurveViewControllerControllers.erase(it);
     }
     
-    Steinberg::Vst::ParamValue getVuMeterByTag(Steinberg::Vst::ParamID tag);
-
     //---Interface---------
     DEFINE_INTERFACES
         // Here you can add more supported VST3 interfaces
@@ -494,12 +470,7 @@ protected:
     UIVuMeterControllerList vuMeterControllers;
     UIEQCurveViewControllerList eqCurveViewControllers;
     UITransferCurveViewControllerList transferCurveViewControllerControllers;
-    
-    
-    
-    std::vector<VSTGUI::MyVuMeter*> vuMeterList;
-    
-    
+
     ParamValue pZoom;
     Steinberg::Vst::ParamValue vuInLRMS = 0.0, vuInRRMS = 0.0;
     Steinberg::Vst::ParamValue vuInLPeak = 0.0, vuInRPeak = 0.0;
@@ -514,8 +485,8 @@ protected:
 //------------------------------------------------------------------------
 class EQCurveViewController :
     public Steinberg::FObject,
-    public VSTGUI::DelegationController,
-    public VSTGUI::CBaseObject
+    public VSTGUI::DelegationController
+    //public VSTGUI::CBaseObject
 {
 public:
     EQCurveViewController (IController* baseController,
@@ -657,8 +628,8 @@ private:
 //------------------------------------------------------------------------
 class TransferCurveViewController :
     public Steinberg::FObject,
-    public VSTGUI::DelegationController, // IControlListener + IController
-    public VSTGUI::CBaseObject
+    public VSTGUI::DelegationController // IControlListener + IController
+    //public VSTGUI::CBaseObject
 {
 public:
     TransferCurveViewController(
@@ -701,6 +672,12 @@ public:
         }
 
         mainController->removeUITransferCurveViewController(this);
+    }
+    
+    void setVuInMono(double val)
+    {
+        if (transferCurveView) transferCurveView->setVuInMono(val);
+        vuInMono = val;
     }
 
 private:
@@ -768,14 +745,17 @@ private:
     Steinberg::Vst::Parameter* ParamMakeup;
     Steinberg::Vst::Parameter* ParamMix;
     TransferCurveView*         transferCurveView;
+    
+    double vuInMono   = -120.0;
 };
 
 //------------------------------------------------------------------------
 // VuMeterController
 //------------------------------------------------------------------------
 class VuMeterController :
-    public VSTGUI::DelegationController, // IControlListener + IController
-    public VSTGUI::ViewListenerAdapter   // IViewListener
+    public VSTGUI::CBaseObject,
+    public VSTGUI::DelegationController // IControlListener + IController
+    // public VSTGUI::ViewListenerAdapter   // IViewListener
 {
 public:
     VuMeterController(IController* baseController, RLFCMP_Controller* mainController) :
@@ -785,58 +765,101 @@ public:
         vuMeterInR(nullptr),
         vuMeterOutL(nullptr),
         vuMeterOutR(nullptr),
-        vuMeterGR(nullptr)
-    {
-    }
+        vuMeterGR(nullptr),
+        pdGainReduction(nullptr)
+    {}
     ~VuMeterController() override
     {
-        if (vuMeterInL)  viewWillDelete(vuMeterInL);
-        if (vuMeterInR)  viewWillDelete(vuMeterInR);
-        if (vuMeterOutL) viewWillDelete(vuMeterOutL);
-        if (vuMeterOutR) viewWillDelete(vuMeterOutR);
-        if (vuMeterGR)   viewWillDelete(vuMeterGR);
+        vuMeterInL = nullptr;
+        vuMeterInR = nullptr;
+        vuMeterOutL = nullptr;
+        vuMeterOutR = nullptr;
+        vuMeterGR = nullptr;
+        pdGainReduction = nullptr;
 
         mainController->removeUIVuMeterController(this);
     }
-
+    enum
+    {
+        kInMono = 100,
+        kInLRMS,
+        kInRRMS,
+        kInLPeak,
+        kInRPeak,
+        kOutMono,
+        kOutLRMS,
+        kOutRRMS,
+        kOutLPeak,
+        kOutRPeak,
+        kGainReduction
+    };
+    
+    double getVuMeterByTag(Steinberg::Vst::ParamID tag)
+    {
+       switch (tag) {
+           case kInMono:        return vuInMono;        break;
+           case kInLRMS:        return vuInLRMS;        break;
+           case kInRRMS:        return vuInRRMS;        break;
+           case kInLPeak:       return vuInLPeak;       break;
+           case kInRPeak:       return vuInRPeak;       break;
+           case kOutMono:       return vuOutMono;       break;
+           case kOutLRMS:       return vuOutLRMS;       break;
+           case kOutRRMS:       return vuOutRRMS;       break;
+           case kOutLPeak:      return vuOutLPeak;      break;
+           case kOutRPeak:      return vuOutRPeak;      break;
+           case kGainReduction: return vuGainReduction; break;
+           default: break;
+       }
+       return 0;
+    }
+    
+    void setVuMeterByTag(double v, Steinberg::Vst::ParamID tag)
+    {
+       switch (tag) {
+           case kInMono:        vuInMono = v;        break;
+           case kInLRMS:        vuInLRMS = v;        break;
+           case kInRRMS:        vuInRRMS = v;        break;
+           case kInLPeak:       vuInLPeak = v;       break;
+           case kInRPeak:       vuInRPeak = v;       break;
+           case kOutMono:       vuOutMono = v;       break;
+           case kOutLRMS:       vuOutLRMS = v;       break;
+           case kOutRRMS:       vuOutRRMS = v;       break;
+           case kOutLPeak:      vuOutLPeak = v;      break;
+           case kOutRPeak:      vuOutRPeak = v;      break;
+           case kGainReduction: vuGainReduction = v; break;
+           default: break;
+       }
+    }
+    
     void updateVuMeterValue()
     {
         if (mainController != nullptr) {
-            if (vuMeterInL)  vuMeterInL-> setValue(mainController->getVuMeterByTag(vuMeterInL->getTag()));
-            if (vuMeterInR)  vuMeterInR-> setValue(mainController->getVuMeterByTag(vuMeterInR->getTag()));
-            if (vuMeterOutL) vuMeterOutL->setValue(mainController->getVuMeterByTag(vuMeterOutL->getTag()));
-            if (vuMeterOutR) vuMeterOutR->setValue(mainController->getVuMeterByTag(vuMeterOutR->getTag()));
-            if (vuMeterGR)   vuMeterGR->  setValue(mainController->getVuMeterByTag(vuMeterGR->getTag()));
+            if (vuMeterInL)  vuMeterInL-> setValue_(getVuMeterByTag(vuMeterInL->getTag()));
+            if (vuMeterInR)  vuMeterInR-> setValue_(getVuMeterByTag(vuMeterInR->getTag()));
+            if (vuMeterOutL) vuMeterOutL->setValue_(getVuMeterByTag(vuMeterOutL->getTag()));
+            if (vuMeterOutR) vuMeterOutR->setValue_(getVuMeterByTag(vuMeterOutR->getTag()));
+            if (vuMeterGR)   vuMeterGR->  setValue_(getVuMeterByTag(vuMeterGR->getTag()));
+            if (pdGainReduction) pdGainReduction->setValue(getVuMeterByTag(vuMeterGR->getTag()));
         }
     }
-
+    
 private:
-    using CControl       = VSTGUI::CControl;
-    using CView          = VSTGUI::CView;
-    using MyVuMeter      = VSTGUI::MyVuMeter;
-    using UTF8String     = VSTGUI::UTF8String;
-    using UIAttributes   = VSTGUI::UIAttributes;
-    using IUIDescription = VSTGUI::IUIDescription;
+    using CControl                  = VSTGUI::CControl;
+    using CView                     = VSTGUI::CView;
+    using MyVuMeter                 = VSTGUI::MyVuMeter;
+    using ClickResetParamDisplay    = VSTGUI::ClickResetParamDisplay;
+    using UTF8String                = VSTGUI::UTF8String;
+    using UIAttributes              = VSTGUI::UIAttributes;
+    using IUIDescription            = VSTGUI::IUIDescription;
 
     //--- from IControlListener ----------------------
-    // void valueChanged(CControl* /*pControl*/) SMTG_OVERRIDE {}
-    // void controlBeginEdit(CControl* /*pControl*/) SMTG_OVERRIDE {}
-    // void controlEndEdit(CControl* pControl) SMTG_OVERRIDE {}
+    //void valueChanged(CControl* /*pControl*/) SMTG_OVERRIDE {}
+    //void controlBeginEdit(CControl* /*pControl*/) SMTG_OVERRIDE {}
+    //void controlEndEdit(CControl* pControl) SMTG_OVERRIDE {}
     //--- is called when a view is created -----
     CView* verifyView(CView* view,
                       const UIAttributes&   /*attributes*/,
                       const IUIDescription* /*description*/) SMTG_OVERRIDE;
-    
-    //--- from ViewListenerAdapter ----------------------
-    //--- is called when a view will be deleted: the editor is closed -----
-    void viewWillDelete(CView* view) SMTG_OVERRIDE
-    {
-        if (dynamic_cast<MyVuMeter*>(view) == vuMeterInL  && vuMeterInL)  { vuMeterInL-> unregisterViewListener(this); vuMeterInL  = nullptr; }
-        if (dynamic_cast<MyVuMeter*>(view) == vuMeterInR  && vuMeterInR)  { vuMeterInR-> unregisterViewListener(this); vuMeterInR  = nullptr; }
-        if (dynamic_cast<MyVuMeter*>(view) == vuMeterOutL && vuMeterOutL) { vuMeterOutL->unregisterViewListener(this); vuMeterOutL = nullptr; }
-        if (dynamic_cast<MyVuMeter*>(view) == vuMeterOutR && vuMeterOutR) { vuMeterOutR->unregisterViewListener(this); vuMeterOutR = nullptr; }
-        if (dynamic_cast<MyVuMeter*>(view) == vuMeterGR   && vuMeterGR)   { vuMeterGR->  unregisterViewListener(this); vuMeterGR   = nullptr; }
-    }
 
     RLFCMP_Controller* mainController = nullptr;
     MyVuMeter* vuMeterInL = nullptr;
@@ -844,6 +867,19 @@ private:
     MyVuMeter* vuMeterOutL = nullptr;
     MyVuMeter* vuMeterOutR = nullptr;
     MyVuMeter* vuMeterGR = nullptr;
+    ClickResetParamDisplay* pdGainReduction = nullptr;
+    
+    double vuInMono   = -120.0;
+    double vuInLRMS   = -120.0;
+    double vuInRRMS   = -120.0;
+    double vuInLPeak  = -120.0;
+    double vuInRPeak  = -120.0;
+    double vuOutMono  = -120.0;
+    double vuOutLRMS  = -120.0;
+    double vuOutRRMS  = -120.0;
+    double vuOutLPeak = -120.0;
+    double vuOutRPeak = -120.0;
+    double vuGainReduction = 0.0;
 };
 
 //------------------------------------------------------------------------

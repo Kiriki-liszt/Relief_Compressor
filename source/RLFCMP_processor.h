@@ -54,6 +54,9 @@ public:
     Steinberg::tresult PLUGIN_API setState (Steinberg::IBStream* state) SMTG_OVERRIDE;
     Steinberg::tresult PLUGIN_API getState (Steinberg::IBStream* state) SMTG_OVERRIDE;
     
+    /** We want to receive message. */
+    Steinberg::tresult PLUGIN_API notify (Steinberg::Vst::IMessage* message) SMTG_OVERRIDE;
+    
     //------------------------------------------------------------------------
 protected:
     // Internal functions ===========================================================
@@ -69,9 +72,7 @@ protected:
     
     // Some definitions ===========================================================
     static SMTG_CONSTEXPR int32 maxChannel = 2; // Strictly Stereo
-    
-    static SMTG_CONSTEXPR double dcHz = 0.05;
-    
+ 
     static SMTG_CONSTEXPR ParamValue k_HT  = 300.0;
     static SMTG_CONSTEXPR ParamValue k_rms = 600.0; // if small, very short attack makes step in release
     static SMTG_CONSTEXPR ParamValue k_detector = 3000.0;
@@ -101,11 +102,13 @@ protected:
     
     // timing of detectors are important then I thought
     // if attack is set to 0, 'tone' of compressor feels like it's smashing at 0 attack, even with attack knob backed off
-    static SMTG_CONSTEXPR double detectorAtk = 0.4; //msec, about size of lookahead(fixed to 0.5ms)
-    static SMTG_CONSTEXPR double detectorRls = 15.0; //msec ~= HOLD
+    static SMTG_CONSTEXPR double detectorAtk = 0.3; //msec
+    static SMTG_CONSTEXPR double detectorRls = 2.0; //msec ~= HOLD
     
     // Internal datastructures ===========================================================
     std::vector<double> sidechain_EQed[maxChannel];
+    std::deque<ParamValue> lookAheadDelayLine[maxChannel];
+    std::deque<ParamValue> latencyDelayLine[maxChannel];
     
     SVF_12     SC_LF[maxChannel];
     SVF_12     SC_HF[maxChannel];
@@ -113,19 +116,13 @@ protected:
     ParamValue HT_coefs[path_num][HT_stage];
     ParamValue HT_state[maxChannel][path_num][io_num][order][HT_stage] = {0, }; // 2-channel, 2-path, 2-state(x, y), 2-order(x1, x2), numCoefs-stages,
     
-    ParamValue hilbert_state[maxChannel];
-    ParamValue squared_state[maxChannel];
-    ParamValue rectified_state[maxChannel];
-    ParamValue envelope_state[maxChannel]; // Leaky Integrator, naive one-pole filter, EWMA, etc
+    ParamValue detectorAtkState[maxChannel] = {0.0, 0.0};
+    ParamValue detectorRlsState[maxChannel] = {0.0, 0.0};
+    ParamValue envelope_state[maxChannel]   = {0.0, 0.0}; // Leaky Integrator, naive one-pole filter, EWMA, etc
 
-    int32 lookaheadSize = 0;
-    int32 halfTap = lookaheadSize / 2;
-    int32 condition = lookaheadSize % 2;
+    int32 lookaheadSize = 24;
     
     ParamValue LAH_coef[maxLAH] = {0.0, };
-    
-    std::deque<ParamValue> lookAheadDelayLine[maxChannel];
-    std::deque<ParamValue> latencyDelayLine[maxChannel];
     
     LevelEnvelopeFollower VuInputRMS[maxChannel] = {
         LevelEnvelopeFollower(LevelEnvelopeFollower::rmsEnv, peakRMSDecay),
@@ -139,71 +136,52 @@ protected:
     LevelEnvelopeFollower VuOutputPeak[maxChannel] = {
         LevelEnvelopeFollower(LevelEnvelopeFollower::peakEnv, peakEnvDecay),
         LevelEnvelopeFollower(LevelEnvelopeFollower::peakEnv, peakEnvDecay)};
-
-    // Parameters ===========================================================
-    bool       pBypass     = dftBypass > 0;
-    bool       pSoftBypass = dftSoftBypass > 0;
-    // pZoom,
-    int        pOS         = overSample_1x;
-    
-    bool       pScLfIn     = dftScLfIn > 0;
-    ParamValue pScLfType   = SVF_6::rLow;
-    ParamValue pScLfFreq   = paramScLfFreq. ToNormalized(dftScLfFreq);
-    ParamValue pScLfGain   = paramScLfGain. ToNormalized(dftScLfGain);
-    bool       pScHfIn     = dftScHfIn > 0;
-    ParamValue pScHfType   = SVF_6::rHigh;
-    ParamValue pScHfFreq   = paramScHfFreq. ToNormalized(dftScHfFreq);
-    ParamValue pScHfGain   = paramScHfGain. ToNormalized(dftScHfGain);
-    bool       pScListen   = false;
-    
-    ParamValue pDType      = paramDetectorType.ToNormalized(dftDetectorType);
-    ParamValue pSCTopology = paramSidechainTopology.ToNormalized(dftSidechainTopology);
-    bool       pHilbertEnable   = true;
-    bool       pLookaheadEnable = true;
-    ParamValue pAttack     = paramAttack.   ToNormalized(dftAttack);
-    ParamValue pRelease    = paramRelease.  ToNormalized(dftRelease);
-    
-    ParamValue pThreshold  = paramThreshold.ToNormalized(dftThreshold);
-    ParamValue pRatio      = paramRatio.    ToNormalized(dftRatio);
-    ParamValue pKnee       = paramKnee.     ToNormalized(dftKnee);
-    ParamValue pMakeup     = paramMakeup.   ToNormalized(dftMakeup);
-    
-    ParamValue pMix        = paramMix.      ToNormalized(dftMix);
-    ParamValue pInput      = paramInput.    ToNormalized(dftInput);
-    ParamValue pOutput     = paramOutput.   ToNormalized(dftOutput);
     
     // Values for GUI ========================================================
-    ParamValue fInputVuRMS[maxChannel] = {0.0, }, fOutputVuRMS[maxChannel] = {0.0, };
+    ParamValue fInputVuRMS [maxChannel] = {0.0, }, fOutputVuRMS [maxChannel] = {0.0, };
     ParamValue fInputVuPeak[maxChannel] = {0.0, }, fOutputVuPeak[maxChannel] = {0.0, };
     ParamValue fGainReduction = 0.0;
+    bool sendUI = false;
     
     // Internal plain values =================================================
-    SampleRate projectSR   = 48000.0;
-    SampleRate internalSR  = 192000.0;//actually, not used
-    ParamValue detectorIndicator = 0.0;
+    SampleRate projectSR    = 48000.0;
+    // SampleRate internalSR   = 192000.0;//actually, not used
     
-    ParamValue dtrAtkCoef  = getTau(detectorAtk,  projectSR);
-    ParamValue dtrRlsCoef  = getTau(detectorRls,  projectSR);
+    bool       bypass       = dftBypass;
+    int32      OS           = overSample_1x;
     
-    int32      dType       = paramDetectorType.ToPlainList(pDType);
-    int32      scTopology  = paramSidechainTopology.ToPlainList(pSCTopology);
-    ParamValue atkCoef     = getTau(dftAttack,  projectSR);
-    ParamValue rlsCoef     = getTau(dftRelease, projectSR);
+    bool       scLfIn       = dftScLfIn;
+    int32      scLfType     = ScTypePass;
+    ParamValue scLfFreq     = dftScLfFreq;
+    ParamValue scLfGain     = dftScLfGain;
+    bool       scHfIn       = dftScHfIn;
+    int32      scHfType     = ScTypeShelf;
+    ParamValue scHfFreq     = dftScHfFreq;
+    ParamValue scHfGain     = dftScHfGain;
+    bool       scListen     = dftScListen;
+    
+    int32      dType        = dftDetectorType;
+    int32      scTopology   = dftSidechainTopology;
+    bool       hilbertEnable    = dftHilbertEnable;
+    bool       lookaheadEnable  = dftLookaheadEnable;
+    ParamValue attack       = dftAttack;
+    ParamValue release      = dftRelease;
+    ParamValue dtrAtkCoef   = getTau(dftAttack * 0.01,  projectSR);
+    ParamValue dtrRlsCoef   = getTau(detectorRls,  projectSR);
+    ParamValue atkCoef      = getTau(dftAttack * 0.99,  projectSR);
+    ParamValue rlsCoef      = getTau(dftRelease, projectSR);
 
-    ParamValue ratio       = paramRatio.ToPlain(pRatio);
-    ParamValue slope       = 1.0 / ratio - 1.0;
-    ParamValue knee        = paramKnee.ToPlain(pKnee);
-    ParamValue kneeHalf    = knee / 2.0;
-    ParamValue threshold   = paramThreshold.ToPlain(pThreshold);
-    ParamValue makeup      = DecibelConverter::ToGain(paramMakeup.ToPlain(pMakeup));
-    
-    ParamValue mix         = pMix;
-    ParamValue input       = DecibelConverter::ToGain(paramInput. ToPlain(pInput));
-    ParamValue output      = DecibelConverter::ToGain(paramOutput.ToPlain(pOutput));
-    
-    // DC Blocker
-    // double DC_state_x[2];
-    // double DC_state_y[2];
+    ParamValue threshold    = dftThreshold;
+    ParamValue ratio        = dftRatio;
+    ParamValue slope        = 1.0 / ratio - 1.0;
+    ParamValue knee         = dftKnee;
+    ParamValue kneeHalf     = knee / 2.0;
+    ParamValue makeup       = DecibelConverter::ToGain(dftMakeup);
+
+    ParamValue mix          = dftMix/maxMix;
+    ParamValue inputGain    = DecibelConverter::ToGain(dftInput);
+    ParamValue outputGain   = DecibelConverter::ToGain(dftOutput);
+    bool       softBypass   = dftSoftBypass;
 };
 
 //------------------------------------------------------------------------

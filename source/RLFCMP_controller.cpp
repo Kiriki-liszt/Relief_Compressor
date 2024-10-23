@@ -33,9 +33,6 @@ EQCurveView::EQCurveView(
     FFTFillColor = kBlackCColor;
     idleRate = 60;
     
-    //LF_SVF.setRange(yg331::PassShelfFilter::rLow);
-    //HF_SVF.setRange(yg331::PassShelfFilter::rHigh);
-    
     LF_SVF.setQ(M_SQRT1_2);
     HF_SVF.setQ(M_SQRT1_2);
     LF_SVF.setFs(48000.0);
@@ -275,7 +272,7 @@ void TransferCurveView::draw(CDrawContext* _pContext)
     // draw border
     pContext->setLineWidth(1);
     pContext->setFillColor(BackColor);
-    pContext->setFrameColor(VSTGUI::CColor(223, 233, 233, 255)); // black borders
+    pContext->setFrameColor(VSTGUI::CColor(223, 233, 233, 255));
     pContext->drawRect(getViewSize(), VSTGUI::kDrawFilledAndStroked);
 
     // draw db lines
@@ -305,8 +302,9 @@ void TransferCurveView::draw(CDrawContext* _pContext)
 
 
     // draw curve
-    VSTGUI::CGraphicsPath* path = pContext->createGraphicsPath();
-    if (path)
+    VSTGUI::CGraphicsPath* pathFull = pContext->createGraphicsPath();
+    VSTGUI::CGraphicsPath* pathInput = pContext->createGraphicsPath();
+    if (pathFull && pathInput)
     {
         VSTGUI::CRect r(getViewSize());
         // VSTGUI::CCoord inset = 30;
@@ -316,7 +314,9 @@ void TransferCurveView::draw(CDrawContext* _pContext)
         double inv_width = 1.0 / r.getWidth();
         double height = r.getHeight();
 
-        path->beginSubpath(VSTGUI::CPoint(r.left - 1, r.bottom));
+        pathFull->beginSubpath(VSTGUI::CPoint(r.left - 1, r.bottom));
+        pathInput->beginSubpath(VSTGUI::CPoint(r.left - 1, r.bottom));
+        std::vector<double> pp_x, pp_y;
         for (int x = -1; x <= width + 1; x++)
         {
             // x * inv_width = [0 ~ 1]
@@ -344,19 +344,48 @@ void TransferCurveView::draw(CDrawContext* _pContext)
             double y = -y_dB * Inv_DB_R; // 1 ~ 0
             y = (1.0 - y) * height;
 
-            path->addLine(VSTGUI::CPoint(r.left + x, r.bottom - y));
+            pathFull->addLine(VSTGUI::CPoint(r.left + x, r.bottom - y));
+            if (x_dB < vuInMono)
+            {
+                pp_x.push_back(x);
+                pp_y.push_back(y);
+                pathInput->addLine(VSTGUI::CPoint(r.left + x, r.bottom - y));
+            }
         }
-        path->addLine(VSTGUI::CPoint(r.right + 1, r.bottom + 1));
-        path->addLine(VSTGUI::CPoint(r.left - 1, r.bottom + 1));
-        path->closeSubpath();
+        while (!pp_x.empty())
+        {
+            double x = *(pp_x.end()-1);
+            double y = *(pp_y.end()-1);
+            pathInput->addLine(VSTGUI::CPoint(r.left + x, r.bottom - y));
+            pp_x.pop_back();
+            pp_y.pop_back();
+        }
+        pathFull->addLine(VSTGUI::CPoint(r.right + 1, r.bottom + 1));
+        pathFull->addLine(VSTGUI::CPoint(r.left - 1, r.bottom + 1));
+        pathFull->closeSubpath();
+        pathInput->closeSubpath();
+        
+        pContext->setFrameColor(LineOffColor);
+        pContext->setDrawMode(VSTGUI::kAntiAliasing);
+        pContext->setLineWidth(2.0);
+        pContext->setLineStyle(VSTGUI::kLineSolid);
+        pContext->drawGraphicsPath(pathFull, VSTGUI::CDrawContext::kPathStroked);
+        pathFull->forget();
         
         pContext->setFrameColor(LineColor);
         pContext->setDrawMode(VSTGUI::kAntiAliasing);
-        pContext->setLineWidth(1.5);
+        pContext->setLineWidth(2.0);
         pContext->setLineStyle(VSTGUI::kLineSolid);
-        pContext->drawGraphicsPath(path, VSTGUI::CDrawContext::kPathStroked);
-        path->forget();
+        pContext->drawGraphicsPath(pathInput, VSTGUI::CDrawContext::kPathStroked);
+        pathInput->forget();
     }
+    
+    // draw border
+    pContext->setLineWidth(1);
+    pContext->setFillColor(kTransparentCColor);
+    pContext->setFrameColor(VSTGUI::CColor(223, 233, 233, 255)); // black borders
+    pContext->drawRect(getViewSize(), VSTGUI::kDrawStroked);
+
 
     setDirty(false);
 };
@@ -410,7 +439,8 @@ void MyVuMeter::draw(CDrawContext* _pContext)
 
     bounceValue();
 
-    float newValue = getValueNormalized(); // normalize
+    // float newValue = getValueNormalized(); // normalize
+    float newValue = (plainValue - getMin ()) / static_cast<float> (getMax () - getMin ());
 
     if (style & kHorizontal)
     {
@@ -465,6 +495,7 @@ bool MyVuMeter::sizeToFit()
 static const std::string kAttrBackColor    = "back-color";
 static const std::string kAttrBorderColor  = "border-color";
 static const std::string kAttrLineColor    = "line-color";
+static const std::string kAttrLineOffColor = "line-off-color";
 static const std::string kAttrFFTLineColor = "FFT-line-color";
 static const std::string kAttrFFTFillColor = "FFT-fill-color";
 
@@ -488,7 +519,7 @@ public:
 
     //return the name here from where your custom view inherites.
     //    Your view automatically supports the attributes from it.
-    IdStringPtr getBaseViewName() const override { return UIViewCreator::kCControl; }
+    IdStringPtr getBaseViewName() const override { return UIViewCreator::kCView; }
 
     //create your view here.
     //    Note you don't need to apply attributes here as
@@ -590,7 +621,7 @@ public:
 };
 
 //------------------------------------------------------------------------
-// Trandfer Curve View Factory
+// Transfer Curve View Factory
 //------------------------------------------------------------------------
 class MyTransferCurveControlFactory : public ViewCreatorAdapter
 {
@@ -618,6 +649,8 @@ public:
             transferCurveView->setBackColor(color);
         if (UIViewCreator::stringToColor(attributes.getAttributeValue(kAttrLineColor), color, description))
             transferCurveView->setLineColor(color);
+        if (UIViewCreator::stringToColor(attributes.getAttributeValue(kAttrLineOffColor), color, description))
+            transferCurveView->setLineOffColor(color);
 
         return true;
     }
@@ -626,6 +659,7 @@ public:
     {
         attributeNames.emplace_back(kAttrBackColor);
         attributeNames.emplace_back(kAttrLineColor);
+        attributeNames.emplace_back(kAttrLineOffColor);
         return true;
     }
 
@@ -634,6 +668,8 @@ public:
         if (attributeName == kAttrBackColor)
             return kColorType;
         if (attributeName == kAttrLineColor)
+            return kColorType;
+        if (attributeName == kAttrLineOffColor)
             return kColorType;
         return kUnknownType;
     }
@@ -658,6 +694,11 @@ public:
         else if (attributeName == kAttrLineColor)
         {
             UIViewCreator::colorToString(transferCurveView->getLineColor(), stringValue, desc);
+            return true;
+        }
+        else if (attributeName == kAttrLineOffColor)
+        {
+            UIViewCreator::colorToString(transferCurveView->getLineOffColor(), stringValue, desc);
             return true;
         }
         return false;
@@ -744,22 +785,6 @@ public:
             return true;
         }
         return false;
-    }
-};
-
-//------------------------------------------------------------------------
-// Meter View Container Factory
-//------------------------------------------------------------------------
-class MyMeterViewContainerFactory : public ViewCreatorAdapter
-{
-public:
-    MyMeterViewContainerFactory() { UIViewFactory::registerViewCreator(*this); }
-    IdStringPtr getViewName() const override { return "MeterViewContainer"; }
-    IdStringPtr getBaseViewName() const override { return UIViewCreator::kCViewContainer; }
-    CView* create(const UIAttributes& attributes, const IUIDescription* description) const override
-    {
-        CRect ss(0, 0, 100, 20);
-        return new MeterViewContainer(ss);
     }
 };
 
@@ -880,7 +905,6 @@ public:
 MyEQCurveViewFactory            __gMyEQCurveViewFactory;
 MyTransferCurveControlFactory   __gMyTransferCurveControlFactory;
 MyClickResetParamDisplayFactory __gMyClickResetParamDisplayFactory;
-MyMeterViewContainerFactory     __gMyMeterViewContainerFactory;
 MyVUMeterFactory                __gMyVUMeterFactory;
 } // namespace VSTGUI
 
@@ -893,46 +917,59 @@ VSTGUI::CView* VuMeterController::verifyView(CView* view,
                   const UIAttributes&   /*attributes*/,
                   const IUIDescription* /*description*/)
 {
-#define minVU   -60.0 // need that margin at bottom
+#define minVU   -60.0
 #define minGRVU -20.0
 #define maxVU     0.0
-    if (MyVuMeter* control = dynamic_cast<MyVuMeter*>(view); control) {
+    if (MyVuMeter* control = dynamic_cast<MyVuMeter*>(view); control)
+    {
         if (control->getTag() == kInLRMS || control->getTag() == kInLPeak)  {
             vuMeterInL  = control;
             vuMeterInL->setMin(minVU);
             vuMeterInL->setMax(maxVU);
             vuMeterInL->setDefaultValue(minVU);
-            vuMeterInL->registerViewListener(this);
+            //vuMeterInL->registerViewListener(this);
         }
         if (control->getTag() == kInRRMS || control->getTag() == kInRPeak)  {
             vuMeterInR  = control;
             vuMeterInR->setMin(minVU);
             vuMeterInR->setMax(maxVU);
             vuMeterInR->setDefaultValue(minVU);
-            vuMeterInR->registerViewListener(this);
+            //vuMeterInR->registerViewListener(this);
         }
         if (control->getTag() == kOutLRMS || control->getTag() == kOutLPeak) {
             vuMeterOutL = control;
             vuMeterOutL->setMin(minVU);
             vuMeterOutL->setMax(maxVU);
             vuMeterOutL->setDefaultValue(minVU);
-            vuMeterOutL->registerViewListener(this);
+            //vuMeterOutL->registerViewListener(this);
         }
         if (control->getTag() == kOutRRMS || control->getTag() == kOutRPeak) {
             vuMeterOutR = control;
             vuMeterOutR->setMin(minVU);
             vuMeterOutR->setMax(maxVU);
             vuMeterOutR->setDefaultValue(minVU);
-            vuMeterOutR->registerViewListener(this);
+            //vuMeterOutR->registerViewListener(this);
         }
         if (control->getTag() == kGainReduction)   {
             vuMeterGR = control;
             vuMeterGR->setMin(minGRVU);
             vuMeterGR->setMax(maxVU);
             vuMeterGR->setDefaultValue(maxVU);
-            vuMeterGR->registerViewListener(this);
+            //vuMeterGR->registerViewListener(this);
         }
     }
+    if (ClickResetParamDisplay* control = dynamic_cast<ClickResetParamDisplay*>(view); control)
+    {
+        if (control->getTag() == kGainReduction)   {
+            pdGainReduction = control;
+            pdGainReduction->setMin(minGRVU);
+            pdGainReduction->setMax(maxVU);
+            pdGainReduction->setDefaultValue(maxVU);
+            pdGainReduction->setPrecision(1);
+            // pdGainReduction->registerViewListener(this);
+        }
+    }
+    
 
     return view;
 };
@@ -1151,14 +1188,14 @@ tresult PLUGIN_API RLFCMP_Controller::initialize (FUnknown* context)
     auto* ParamSidechainTopology = new Vst::StringListParameter(STR16("Sidechain Topology"), tag);
     ParamSidechainTopology->appendString (STR16("LIN"));
     ParamSidechainTopology->appendString (STR16("LOG"));
+    ParamSidechainTopology->getInfo().defaultNormalizedValue = ParamSidechainTopology->toNormalized(1.0);
+    ParamSidechainTopology->setNormalized(ParamSidechainTopology->toNormalized(1.0));
     parameters.addParameter (ParamSidechainTopology);
     
     tag          = kParamHilbertEnable;
     auto* ParamHilbertEnable = new Vst::StringListParameter(STR16("Hilbert Enable"), tag);
     ParamHilbertEnable->appendString (STR16("OFF"));
     ParamHilbertEnable->appendString (STR16("ON"));
-    ParamHilbertEnable->getInfo().defaultNormalizedValue = ParamHilbertEnable->toNormalized(1.0);
-    ParamHilbertEnable->setNormalized(ParamHilbertEnable->toNormalized(1.0));
     parameters.addParameter (ParamHilbertEnable);
     
     tag          = kParamLookaheadEnable;
@@ -1205,7 +1242,7 @@ tresult PLUGIN_API RLFCMP_Controller::initialize (FUnknown* context)
     maxPlain     = maxRatio;
     defaultPlain = dftRatio;
     stepCount    = 0;
-    auto* ParamRatio = new Vst::RangeParameter(STR16("Ratio"), tag, STR16(""), minPlain, maxPlain, defaultPlain, stepCount, flags);
+    auto* ParamRatio = new LogRangeParameter(STR16("Ratio"), tag, STR16(""), minPlain, maxPlain, defaultPlain, stepCount, flags);
     ParamRatio->setPrecision(1);
     parameters.addParameter(ParamRatio);
 
@@ -1287,12 +1324,12 @@ tresult PLUGIN_API RLFCMP_Controller::initialize (FUnknown* context)
     uiParameters.addParameter(zoomParameter);
     
 
-    tag          = 1001;
+    tag          = paramControllerPage;
     auto* paramControllerPage = new Vst::StringListParameter(STR16("controllerPage"), tag);
     paramControllerPage->appendString (STR16("COMPRESSOR")); // first of StringList is default
     paramControllerPage->appendString (STR16("SIDECHAIN EQ"));
     paramControllerPage->addDependent(this);
-    parameters.addParameter (paramControllerPage);
+    uiParameters.addParameter (paramControllerPage);
     
     return result;
 }
@@ -1302,7 +1339,7 @@ tresult PLUGIN_API RLFCMP_Controller::terminate ()
 {
     // Here the Plug-in will be de-instantiated, last possibility to remove some memory!
     getParameterObject(kParamZoom)->removeDependent(this);
-    getParameterObject(1001)->removeDependent(this);
+    getParameterObject(paramControllerPage)->removeDependent(this);
 
     //---do not forget to call parent ------
     return EditControllerEx1::terminate ();
@@ -1317,46 +1354,95 @@ tresult PLUGIN_API RLFCMP_Controller::setComponentState (IBStream* state)
     
     IBStreamer streamer(state, kLittleEndian);
 
-    int32           savedBypass     = 0;
-    // Vst::ParamValue savedZoom       = 0.0;
-    // Vst::ParamValue savedOS         = 0.0;
-    int32           savedSidechainFilter = 0;
-    Vst::ParamValue savedAttack     = 0.0;
-    Vst::ParamValue savedRelease    = 0.0;
-    Vst::ParamValue savedBias       = 0.0;
-    Vst::ParamValue savedThreshold  = 0.0;
-    Vst::ParamValue savedRatio      = 0.0;
-    Vst::ParamValue savedKnee       = 0.0;
-    Vst::ParamValue savedMakeup     = 0.0;
-    Vst::ParamValue savedMix        = 0.0;
-    Vst::ParamValue savedOutput     = 0.0;
-    int32           savedSoftBypass = 0.0;
+    bool    savedBypass     = dftBypass;
+    int32   savedOS         = overSample_1x;
     
-    if (streamer.readInt32 (savedBypass)     == false) savedBypass     = 0;
-    // if (streamer.readDouble(savedZoom)       == false) savedZoom       = 2.0 / 6.0;
-    // if (streamer.readDouble(savedOS)         == false) savedOS         = 0.0;
-    if (streamer.readDouble(savedAttack)     == false) savedAttack     = paramAttack.ToNormalized(dftAttack);
-    if (streamer.readDouble(savedRelease)    == false) savedRelease    = paramRelease.ToNormalized(dftRelease);
-    if (streamer.readDouble(savedThreshold)  == false) savedThreshold  = paramThreshold.ToNormalized(dftThreshold);
-    if (streamer.readDouble(savedRatio)      == false) savedRatio      = paramRatio.ToNormalized(dftRatio);
-    if (streamer.readDouble(savedKnee)       == false) savedKnee       = paramKnee.ToNormalized(dftKnee);
-    if (streamer.readDouble(savedMakeup)     == false) savedMakeup     = paramMakeup.ToNormalized(dftMakeup);
-    if (streamer.readDouble(savedMix)        == false) savedMix        = paramMix.ToNormalized(dftMix);
-    if (streamer.readDouble(savedOutput)     == false) savedOutput     = paramOutput.ToNormalized(dftOutput);
-    if (streamer.readInt32 (savedSoftBypass) == false) savedSoftBypass = 0;
+    bool    savedScLfIn     = dftScLfIn;
+    int32   savedScLfType   = ScTypePass;
+    double  savedScLfFreq   = dftScLfFreq;
+    double  savedScLfGain   = dftScLfGain;
+    bool    savedScHfIn     = dftScHfIn;
+    int32   savedScHfType   = ScTypeShelf;
+    double  savedScHfFreq   = dftScHfFreq;
+    double  savedScHfGain   = dftScHfGain;
+    bool    savedScListen   = dftScListen;
+    
+    int32   savedDType           = dftDetectorType;
+    int32   savedScTopology      = dftSidechainTopology;
+    bool    savedHilbertEnable   = dftHilbertEnable;
+    bool    savedLookaheadEnable = dftLookaheadEnable;
+    double  savedAttack          = dftAttack;
+    double  savedRelease         = dftRelease;
+    
+    double  savedThreshold       = dftThreshold;
+    double  savedRatio           = dftRatio;
+    double  savedKnee            = dftKnee;
+    double  savedMakeup          = DecibelConverter::ToGain(dftMakeup);
+    
+    double  savedMix             = dftMix/maxMix;
+    double  savedInputGain       = DecibelConverter::ToGain(dftInput);
+    double  savedOutputGain      = DecibelConverter::ToGain(dftOutput);
+    bool    savedSoftBypass      = dftSoftBypass;
 
-    setParamNormalized(kParamBypass,     savedBypass ? 1 : 0);
-    // setParamNormalized(kParamZoom,       savedZoom);
-    // setParamNormalized(kParamOS,         savedOS);
-    setParamNormalized(kParamAttack,     savedAttack);
-    setParamNormalized(kParamRelease,    savedRelease);
-    setParamNormalized(kParamThreshold,  savedThreshold);
-    setParamNormalized(kParamRatio,      savedRatio);
-    setParamNormalized(kParamKnee,       savedKnee);
-    setParamNormalized(kParamMakeup,     savedMakeup);
-    setParamNormalized(kParamMix,        savedMix);
-    setParamNormalized(kParamOutput,     savedOutput);
-    setParamNormalized(kParamSoftBypass, savedSoftBypass ? 1 : 0);
+    if (streamer.readBool  (savedBypass)        == false) savedBypass     = dftBypass;
+    if (streamer.readInt32 (savedOS)            == false) savedOS         = overSample_1x;
+    
+    if (streamer.readBool  (savedScLfIn)        == false) savedScLfIn     = dftScLfIn;
+    if (streamer.readInt32 (savedScLfType)      == false) savedScLfType   = ScTypePass;
+    if (streamer.readDouble(savedScLfFreq)      == false) savedScLfFreq   = dftScLfFreq;
+    if (streamer.readDouble(savedScLfGain)      == false) savedScLfGain   = dftScLfGain;
+    if (streamer.readBool  (savedScHfIn)        == false) savedScHfIn     = dftScHfIn;
+    if (streamer.readInt32 (savedScHfType)      == false) savedScHfType   = ScTypeShelf;
+    if (streamer.readDouble(savedScHfFreq)      == false) savedScHfFreq   = dftScHfFreq;
+    if (streamer.readDouble(savedScHfGain)      == false) savedScHfGain   = dftScHfGain;
+    if (streamer.readBool  (savedScListen)      == false) savedScListen   = dftScListen;
+    
+    if (streamer.readInt32 (savedDType)             == false) savedDType           = dftDetectorType;
+    if (streamer.readInt32 (savedScTopology)        == false) savedScTopology      = dftSidechainTopology;
+    if (streamer.readBool  (savedHilbertEnable)     == false) savedHilbertEnable   = dftHilbertEnable;
+    if (streamer.readBool  (savedLookaheadEnable)   == false) savedLookaheadEnable = dftLookaheadEnable;
+    if (streamer.readDouble(savedAttack)            == false) savedAttack          = dftAttack;
+    if (streamer.readDouble(savedRelease)           == false) savedRelease         = dftRelease;
+    
+    if (streamer.readDouble(savedThreshold)     == false) savedThreshold       = dftThreshold;
+    if (streamer.readDouble(savedRatio)         == false) savedRatio           = dftRatio;
+    if (streamer.readDouble(savedKnee)          == false) savedKnee            = dftKnee;
+    if (streamer.readDouble(savedMakeup)        == false) savedMakeup          = DecibelConverter::ToGain(dftMakeup);
+    
+    if (streamer.readDouble(savedMix)           == false) savedMix             = dftMix/maxMix;
+    if (streamer.readDouble(savedInputGain)     == false) savedInputGain       = DecibelConverter::ToGain(dftInput);
+    if (streamer.readDouble(savedOutputGain)    == false) savedOutputGain      = DecibelConverter::ToGain(dftOutput);
+    if (streamer.readBool  (savedSoftBypass)    == false) savedSoftBypass      = dftSoftBypass;
+
+    setParamNormalized(kParamBypass,    savedBypass ? 1 : 0);
+    setParamNormalized(kParamOS,        savedOS);
+
+    setParamNormalized(kParamScLfIn,    savedScLfIn ? 1 : 0);
+    setParamNormalized(kParamScLfType,  paramScLfType.ToNormalized(savedScLfType));
+    setParamNormalized(kParamScLfFreq,  paramScLfFreq.ToNormalized(savedScLfFreq));
+    setParamNormalized(kParamScLfGain,  paramScLfGain.ToNormalized(savedScLfGain));
+    setParamNormalized(kParamScHfIn,    savedScHfIn ? 1 : 0);
+    setParamNormalized(kParamScHfType,  paramScHfType.ToNormalized(savedScHfType));
+    setParamNormalized(kParamScHfFreq,  paramScHfFreq.ToNormalized(savedScHfFreq));
+    setParamNormalized(kParamScHfGain,  paramScHfGain.ToNormalized(savedScHfGain));
+    setParamNormalized(kParamScListen,  savedScListen ? 1 : 0);
+    
+    setParamNormalized(kParamDetectorType,      paramDetectorType.ToNormalized(savedDType));
+    setParamNormalized(kParamSidechainTopology, paramSidechainTopology.ToNormalized(savedScTopology));
+    setParamNormalized(kParamHilbertEnable,     savedHilbertEnable ? 1 : 0);
+    setParamNormalized(kParamLookaheadEnable,   savedLookaheadEnable ? 1 : 0);
+    setParamNormalized(kParamAttack,            paramAttack.ToNormalized(savedAttack));
+    setParamNormalized(kParamRelease,           paramRelease.ToNormalized(savedRelease));
+    
+    setParamNormalized(kParamThreshold,     paramThreshold.ToNormalized(savedThreshold));
+    setParamNormalized(kParamRatio,         paramRatio.ToNormalized(savedRatio));
+    setParamNormalized(kParamKnee,          paramKnee.ToNormalized(savedKnee));
+    setParamNormalized(kParamMakeup,        paramMakeup.ToNormalized(DecibelConverter::ToDecibel(savedMakeup)));
+    
+    setParamNormalized(kParamMix,           savedMix);
+    setParamNormalized(kParamInput,         paramInput.ToNormalized(DecibelConverter::ToDecibel(savedInputGain)));
+    setParamNormalized(kParamOutput,        paramOutput.ToNormalized(DecibelConverter::ToDecibel(savedOutputGain)));
+    setParamNormalized(kParamSoftBypass,    savedSoftBypass ? 1 : 0);
     
     return kResultOk;
 }
@@ -1404,14 +1490,12 @@ VSTGUI::IController* RLFCMP_Controller::createSubController (VSTGUI::UTF8StringP
                                                              const VSTGUI::IUIDescription* description,
                                                              VSTGUI::VST3Editor* editor)
 {
-    /*
     if (VSTGUI::UTF8StringView(name) == "VuMeterController")
     {
         auto* controller = new VuMeterController(editor, this);
         addUIVuMeterController(controller);
         return controller;
     }
-     */
     if (VSTGUI::UTF8StringView(name) == "eqCurveController")
     {
         Steinberg::Vst::Parameter* ScLfInParam = getParameterObject(kParamScLfIn);
@@ -1505,12 +1589,30 @@ tresult PLUGIN_API RLFCMP_Controller::getParamValueByString (Vst::ParamID tag, V
 void RLFCMP_Controller::editorAttached(Vst::EditorView* editor)
 {
     editors.push_back(editor);
+    if (!editors.empty())
+    {
+        if (IPtr<Vst::IMessage> message = owned (allocateMessage ()))
+        {
+           message->setMessageID ("GUI");
+           message->getAttributes()->setInt ("start", 1);
+           sendMessage (message);
+        }
+    }
 }
 
 //------------------------------------------------------------------------
 void RLFCMP_Controller::editorRemoved(Vst::EditorView* editor)
 {
     editors.erase(std::find(editors.begin(), editors.end(), editor));
+    if (editors.empty())
+    {
+        if (IPtr<Vst::IMessage> message = owned (allocateMessage ()))
+        {
+           message->setMessageID ("GUI");
+           message->getAttributes()->setInt ("start", 0);
+           sendMessage (message);
+        }
+    }
 }
 
 //------------------------------------------------------------------------
@@ -1563,52 +1665,36 @@ tresult PLUGIN_API RLFCMP_Controller::notify(Vst::IMessage* message)
         if (message->getAttributes ()->getFloat (msgGainReduction, getValue) == kResultTrue)
         {
             vuGainReduction  = getValue;
-            /*
-            if (!vuMeterList.empty())
+            
+            if (!vuMeterControllers.empty())
             {
-                for (auto iter = vuMeterList.begin(); iter != vuMeterList.end(); iter++)
+                for (auto &iter : vuMeterControllers)
                 {
-                    if (*iter == nullptr) continue;
-                    int type = (*iter)->getTag();
-                    switch (type) {
-                        case kInLPeak: (*iter)->setValue(vuInLPeak); break;
-                        case kInRPeak: (*iter)->setValue(vuInRPeak); break;
-                        case kInLRMS: (*iter)->setValue(vuInLRMS); break;
-                        case kInRRMS: (*iter)->setValue(vuInRRMS); break;
-                        case kOutLPeak: (*iter)->setValue(vuOutLPeak); break;
-                        case kOutRPeak: (*iter)->setValue(vuOutRPeak); break;
-                        case kOutLRMS: (*iter)->setValue(vuOutLRMS); break;
-                        case kOutRRMS: (*iter)->setValue(vuOutRRMS); break;
-                            
-                        default: break;
-                    }
+                    iter->setVuMeterByTag(vuInLPeak, kInLPeak);
+                    iter->setVuMeterByTag(vuInRPeak, kInRPeak);
+                    iter->setVuMeterByTag(vuInLRMS, kInLRMS);
+                    iter->setVuMeterByTag(vuInRRMS, kInRRMS);
+                    iter->setVuMeterByTag(vuOutLPeak, kOutLPeak);
+                    iter->setVuMeterByTag(vuOutRPeak, kOutRPeak);
+                    iter->setVuMeterByTag(vuOutLRMS, kOutLRMS);
+                    iter->setVuMeterByTag(vuOutRRMS, kOutRRMS);
+                    iter->setVuMeterByTag(vuGainReduction, kGainReduction);
+                    iter->updateVuMeterValue();
                 }
             }
-             */
+            
+            if (!transferCurveViewControllerControllers.empty())
+            {
+                for (auto &iter : transferCurveViewControllerControllers)
+                {
+                    iter->setVuInMono(0.5 * vuInLPeak + 0.5 * vuInRPeak);
+                }
+            }
         }
         
         return kResultOk;
     }
     return EditControllerEx1::notify(message);
-}
-
-Steinberg::Vst::ParamValue RLFCMP_Controller::getVuMeterByTag(Steinberg::Vst::ParamID tag)
-{
-   switch (tag) {
-       case kInMono:     return vuInMono;    break;
-       case kInLRMS:    return vuInLRMS;    break;
-       case kInRRMS:    return vuInRRMS;    break;
-       case kInLPeak:    return vuInLPeak;    break;
-       case kInRPeak:    return vuInRPeak;    break;
-       case kOutMono:    return vuOutMono;   break;
-       case kOutLRMS:   return vuOutLRMS;   break;
-       case kOutRRMS:   return vuOutRRMS;   break;
-       case kOutLPeak:   return vuOutLPeak;   break;
-       case kOutRPeak:   return vuOutRPeak;   break;
-       case kGainReduction:     return vuGainReduction;     break;
-       default: break;
-   }
-   return 0;
 }
 //------------------------------------------------------------------------
 } // namespace yg331

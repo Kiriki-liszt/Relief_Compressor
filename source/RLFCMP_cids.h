@@ -22,6 +22,7 @@ enum {
     kParamZoom,
     kParamOS,          // change it to HQ mode?
     
+    // Sidechain
     kParamScLfIn,
     kParamScLfType,
     kParamScLfFreq,
@@ -48,6 +49,7 @@ enum {
     kParamKnee,
     kParamMakeup,
     
+    // General I/O
     kParamMix,
     kParamInput,
     kParamOutput,
@@ -67,6 +69,10 @@ enum
     kOutLPeak,
     kOutRPeak,
     kGainReduction
+};
+
+enum{
+    paramControllerPage = 1001
 };
 
 //------------------------------------------------------------------------

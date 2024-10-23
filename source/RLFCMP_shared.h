@@ -39,6 +39,10 @@ static SMTG_CONSTEXPR int ScTopologyLin = 0;
 static SMTG_CONSTEXPR int ScTopologyLog = 1;
 static SMTG_CONSTEXPR int ScTopologyNum = 1;
 
+static SMTG_CONSTEXPR int ScTypePass   = 0;
+static SMTG_CONSTEXPR int ScTypeShelf  = 1;
+static SMTG_CONSTEXPR int ScTypeNum    = 1;
+
 //------------------------------------------------------------------------
 //  Class for converter
 //------------------------------------------------------------------------
@@ -170,17 +174,6 @@ private:
     paramType type = paramType::range;
     int32 numSteps = -1;
 };
-
-
-
-
-
-
-
-
-
-
-
 
 
 /**
@@ -353,12 +346,12 @@ public:
 
 class SVF_6 {
 public:
-    static SMTG_CONSTEXPR int tPass  = 0;
-    static SMTG_CONSTEXPR int tShelf = 1;
-    static SMTG_CONSTEXPR int tNum   = 1;
-    
-    static SMTG_CONSTEXPR int rLow   = 0;
-    static SMTG_CONSTEXPR int rHigh  = 1;
+    static SMTG_CONSTEXPR int tHighPass  = 0;
+    static SMTG_CONSTEXPR int tLowPass   = 1;
+    static SMTG_CONSTEXPR int tAllPass   = 2;
+    static SMTG_CONSTEXPR int tLowShelf  = 3;
+    static SMTG_CONSTEXPR int tHighShelf = 4;
+    static SMTG_CONSTEXPR int tNum       = 4;
 
     SVF_6()
     {
@@ -369,21 +362,18 @@ public:
     {
         iceq = 0.0;
     }
-    
+
     void   setIn(bool v) { In = v; }
     bool   getIn() const { return In; }
-    
+
     void   setFreq(double v) { Hz = v; }
     double getFreq() const { return Hz; }
-    
+
     void   setGain(double v) { dB = v; }
     double getGain() const { return dB; }
-    
+
     void   setType(int v) { Type = v; }
     int    getType() const { return Type; }
-    
-    void   setRange(int v) { Range = v; }
-    int    getRange() const { return Range; }
 
     void   setFs(double v) { Fs = v; }
     double getFs() const { return Fs; }
@@ -407,23 +397,14 @@ public:
         double A = pow(10.0, dB / 40.0);
         double AmA = A * A;
         
-        if (Range == rLow)
+        switch (Type)
         {
-            switch (Type)
-            {
-                case tPass:  m0 = 1;   m2 = 0;   break;
-                case tShelf: m0 = 1;   m2 = AmA; break;
-                default: break;
-            }
-        }
-        else // if (flt.Range == rHigh)
-        {
-            switch (Type)
-            {
-                case tPass:  m0 = 0;   m2 = 1;   break; // HighCut, LowPass
-                case tShelf: m0 = AmA; m2 = 1;   break;
-                default: break;
-            }
+            case tHighPass:  m0 = 1;   m2 = 0;   break;
+            case tLowPass:   m0 = 0;   m2 = 1;   break;
+            case tAllPass:   m0 = 1;   m2 = 1;   break;
+            case tLowShelf:  m0 = 1;   m2 = AmA; break;
+            case tHighShelf: m0 = AmA; m2 = 1;   break;
+            default: break;
         }
 
         return;
@@ -480,8 +461,7 @@ public:
     bool   In = true;
     double Hz = 100.0;
     double dB = 0.0;
-    int    Type = tPass;
-    int    Range = rLow;
+    int    Type = tLowPass;
     double Fs = 48000.0;
 
     double w = Hz * M_PI / Fs;
@@ -551,13 +531,15 @@ static SMTG_CONSTEXPR ParamValue RLB_Q    = 0.70758;
 //------------------------------------------------------------------------
 //  Min, Max, Default of Parameters
 //------------------------------------------------------------------------
-static SMTG_CONSTEXPR ParamValue dftBypass          = 0.0;
-static SMTG_CONSTEXPR ParamValue dftSoftBypass      = 0.0;
-static SMTG_CONSTEXPR ParamValue dftLookaheadEnable = 1.0;
-static SMTG_CONSTEXPR ParamValue dftScLfIn          = 1.0;
-static SMTG_CONSTEXPR ParamValue dftScHfIn          = 1.0;
-static SMTG_CONSTEXPR ParamValue dftDetectorType    = detectorPeak;
-static SMTG_CONSTEXPR ParamValue dftSidechainTopology = ScTopologyLin;
+static SMTG_CONSTEXPR bool dftBypass          = false;
+static SMTG_CONSTEXPR bool dftSoftBypass      = false;
+static SMTG_CONSTEXPR bool dftScLfIn          = true;
+static SMTG_CONSTEXPR bool dftScHfIn          = true;
+static SMTG_CONSTEXPR bool dftScListen        = false;
+static SMTG_CONSTEXPR bool dftLookaheadEnable = true;
+static SMTG_CONSTEXPR bool dftHilbertEnable   = false;
+static SMTG_CONSTEXPR int32 dftDetectorType      = detectorPeak;
+static SMTG_CONSTEXPR int32 dftSidechainTopology = ScTopologyLog;
 
 static SMTG_CONSTEXPR ParamValue minScLfFreq  = 20.0;
 static SMTG_CONSTEXPR ParamValue maxScLfFreq  = 18000.0;
@@ -611,10 +593,10 @@ static SMTG_CONSTEXPR ParamValue minOutput    = -12.0;
 static SMTG_CONSTEXPR ParamValue maxOutput    = 12.0;
 static SMTG_CONSTEXPR ParamValue dftOutput    = 0.0;
 
-static const ParameterConverter paramScLfType     (0,  0,  ParameterConverter::paramType::list, SVF_6::tNum);
+static const ParameterConverter paramScLfType     (0,  0,  ParameterConverter::paramType::list, ScTypeNum);
 static const ParameterConverter paramScLfFreq     (minScLfFreq,  maxScLfFreq,  ParameterConverter::paramType::log);
 static const ParameterConverter paramScLfGain     (minScLfGain,  maxScLfGain,  ParameterConverter::paramType::range);
-static const ParameterConverter paramScHfType     (0,  0,  ParameterConverter::paramType::list, SVF_6::tNum);
+static const ParameterConverter paramScHfType     (0,  0,  ParameterConverter::paramType::list, ScTypeNum);
 static const ParameterConverter paramScHfFreq     (minScHfFreq,  maxScHfFreq,  ParameterConverter::paramType::log);
 static const ParameterConverter paramScHfGain     (minScHfGain,  maxScHfGain,  ParameterConverter::paramType::range);
 static const ParameterConverter paramDetectorType (0,  0,  ParameterConverter::paramType::list, detectorNum);
@@ -622,7 +604,7 @@ static const ParameterConverter paramSidechainTopology (0,  0,  ParameterConvert
 static const ParameterConverter paramAttack       (minAttack,    maxAttack,    ParameterConverter::paramType::log);
 static const ParameterConverter paramRelease      (minRelease,   maxRelease,   ParameterConverter::paramType::log);
 static const ParameterConverter paramThreshold    (minThreshold, maxThreshold, ParameterConverter::paramType::range);
-static const ParameterConverter paramRatio        (minRatio,     maxRatio,     ParameterConverter::paramType::range);
+static const ParameterConverter paramRatio        (minRatio,     maxRatio,     ParameterConverter::paramType::log);
 static const ParameterConverter paramKnee         (minKnee,      maxKnee,      ParameterConverter::paramType::range);
 static const ParameterConverter paramMakeup       (minMakeup,    maxMakeup,    ParameterConverter::paramType::range);
 static const ParameterConverter paramMix          (minMix,       maxMix,       ParameterConverter::paramType::range);
@@ -815,29 +797,6 @@ public:
         pwr = 1.0 / pwr;
         for (int i = 0; i < length; i++) {
             dest[i] *= pwr;
-        }
-    }
-};
-
-class Flt {
-public:
-    double coef alignas(16)[Kaiser::maxTap] = { 0, };
-    double buff alignas(16)[Kaiser::maxTap] = { 0, };
-    int now = 0;
-    int size = Kaiser::maxTap;
-    double* buff_ptr = buff;
-    void acc() {
-        now++;
-        if (now == size) {
-            now = 0;
-        }
-    }
-    int get_nth(int n) {
-        if (now + n >= size) {
-            return now + n - size;
-        }
-        else {
-            return now + n;
         }
     }
 };
