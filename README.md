@@ -49,7 +49,7 @@ Unzip MacOS.zip from latest release and copy vst3 to "/Library/Audio/Plug-Ins/VS
 
 ## Licensing  
 
-Relief EQ is using GPL v3 license.  
+Relief Compressor is using GPL v3 license.  
 
 ### VST  
 
