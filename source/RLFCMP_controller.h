@@ -39,25 +39,25 @@ public:
     CColor getFFTFillColor() const { return FFTFillColor; }
     
     // get/set Parameters
-    void   setLfIn  (bool value)   { LF_SVF.setIn(value); setDirty(true); }
+    void   setLfIn  (bool value)   { LF_SVF.setIn(value); }
     bool   getLfIn  () const       { return LF_SVF.getIn(); }
-    void   setLfType(int value)    { LF_SVF.setType(value); setDirty(true); }
+    void   setLfType(int value)    { LF_SVF.setType(value); }
     int    getLfType() const       { return LF_SVF.getType(); }
-    void   setLfFreq(double value) { LF_SVF.setFreq(value); setDirty(true); }
+    void   setLfFreq(double value) { LF_SVF.setFreq(value); }
     int    getLfFreq() const       { return LF_SVF.getFreq(); }
-    void   setLfGain(double value) { LF_SVF.setGain(value); setDirty(true); }
+    void   setLfGain(double value) { LF_SVF.setGain(value); }
     int    getLfGain() const       { return LF_SVF.getGain(); }
 
-    void   setHfIn  (bool value)   { HF_SVF.setIn(value); setDirty(true); }
+    void   setHfIn  (bool value)   { HF_SVF.setIn(value); }
     bool   getHfIn  () const       { return HF_SVF.getIn(); }
-    void   setHfType(int value)    { HF_SVF.setType(value); setDirty(true); }
+    void   setHfType(int value)    { HF_SVF.setType(value); }
     int    getHfType() const       { return HF_SVF.getType(); }
-    void   setHfFreq(double value) { HF_SVF.setFreq(value); setDirty(true); }
+    void   setHfFreq(double value) { HF_SVF.setFreq(value); }
     int    getHfFreq() const       { return HF_SVF.getFreq(); }
-    void   setHfGain(double value) { HF_SVF.setGain(value); setDirty(true); }
+    void   setHfGain(double value) { HF_SVF.setGain(value); }
     int    getHfGain() const       { return HF_SVF.getGain(); }
     
-    void   makeSVF() { LF_SVF.makeSVF(); HF_SVF.makeSVF(); setDirty(true); }
+    void   makeSVF() { LF_SVF.makeSVF(); HF_SVF.makeSVF(); }
 
     // overrides
     void setDirty(bool state) override { CView::setDirty(state); };
@@ -118,22 +118,22 @@ public:
     }
 
     // get/set Parameters
-    void   setThreshold(double value) { if (threshold != value) { threshold = value; setDirty(true); } }
+    void   setThreshold(double value) { threshold = value; }
     double getThreshold() const { return threshold; }
 
-    void   setKnee(double value) { if (knee != value) { knee = value; kneeHalf  = knee / 2.0; setDirty(true); } }
+    void   setKnee(double value) { knee = value; kneeHalf  = knee / 2.0; }
     double getKnee() const { return knee; }
 
-    void   setRatio(double value) { if (ratio != value) { ratio = value; slope = 1.0 / ratio - 1.0; setDirty(true); } }
+    void   setRatio(double value) { ratio = value; slope = 1.0 / ratio - 1.0; }
     double getRatio() const { return ratio; }
     
-    void   setMakeup(double value) { if (makeup != value) { makeup = value; setDirty(true); } }
+    void   setMakeup(double value) { makeup = value; }
     double getMakeup() const { return makeup; }
 
-    void   setMix(double value) { if (mix != value) { mix = value; setDirty(true); } }
+    void   setMix(double value) { mix = value; }
     double getMix() const { return mix; }
     
-    void   setVuInMono(double value) { if (vuInMono != value) { vuInMono = value; setDirty(true); } }
+    void   setVuInMono(double value) { vuInMono = value; }
     double getVuInMono() const { return vuInMono; }
 
     // get/set Attributes
@@ -279,6 +279,7 @@ public:
     CColor getVuOffColor() const { return vuOffColor; }
     void   setVuOffColor(CColor color) { if (vuOffColor != color) { vuOffColor = color; setDirty(true); } }
     
+    // don't mess with it's real value, else it need some listener and gets messy...
     void setValue_(float v) {plainValue = v;}
 
     // overrides
@@ -532,11 +533,11 @@ public:
         if (ParamScHfFreq) ParamScHfFreq->removeDependent(this);
         if (ParamScHfGain) ParamScHfGain->removeDependent(this);
         
-        if (eqCurveView)
-        {
-            eqCurveView->unregisterControlListener (this);
-            eqCurveView->forget ();
-        }
+        //if (eqCurveView)
+        //{
+        //    eqCurveView->unregisterControlListener (this);
+        //    eqCurveView->forget ();
+        //}
 
         mainController->removeUIEQCurveViewController(this);
     }
@@ -596,8 +597,8 @@ private:
         if (EQCurveView* control = dynamic_cast<EQCurveView*>(view); control)
         {
             eqCurveView = control;
-            eqCurveView->registerControlListener(this);
-            eqCurveView->remember();
+            //eqCurveView->registerControlListener(this);
+            //eqCurveView->remember();
             
             update(ParamScLfIn,   kChanged);
             update(ParamScLfType, kChanged);
@@ -665,11 +666,11 @@ public:
         if (ParamMakeup   ) ParamMakeup   ->removeDependent(this);
         if (ParamMix      ) ParamMix      ->removeDependent(this);
 
-        if (transferCurveView)
-        {
-            transferCurveView->unregisterControlListener (this);
-            transferCurveView->forget ();
-        }
+        //if (transferCurveView)
+        //{
+        //    transferCurveView->unregisterControlListener (this);
+        //    transferCurveView->forget ();
+        //}
 
         mainController->removeUITransferCurveViewController(this);
     }
@@ -677,7 +678,6 @@ public:
     void setVuInMono(double val)
     {
         if (transferCurveView) transferCurveView->setVuInMono(val);
-        vuInMono = val;
     }
 
 private:
@@ -702,7 +702,6 @@ private:
                     if (p == ParamRatio     && ParamRatio    ) transferCurveView->setRatio    (paramRatio    .ToPlain(p->getNormalized()));
                     if (p == ParamMakeup    && ParamMakeup   ) transferCurveView->setMakeup   (paramMakeup   .ToPlain(p->getNormalized()));
                     if (p == ParamMix       && ParamMix      ) transferCurveView->setMix      (p->getNormalized()); // mix is in 0~1
-                    // curveView->invalid();
                 }
                 else if (message == kWillDestroy)
                 {
@@ -715,6 +714,17 @@ private:
             }
         }
     }
+    //------------------------------------------------------------------------
+    // void valueChanged (CControl* pControl)
+    /* do sth like these
+        {
+            CXYPad::calculateXY (pControl->getValue (), x, y);
+
+            auto xId = xParam->getInfo ().id;
+            if (editController->setParamNormalized (xId, x) == Steinberg::kResultTrue)
+                editController->performEdit (xId, editController->getParamNormalized (xId));
+        }
+     */
     
     //--- is called when a view is created -----
     CView* verifyView(
@@ -725,8 +735,12 @@ private:
         if (TransferCurveView* control = dynamic_cast<TransferCurveView*>(view); control)
         {
             transferCurveView = control;
-            transferCurveView->registerControlListener(this);
-            transferCurveView->remember();
+            // CControl has main IControlListener* listener, and sub ViewEventListenerAdapter as impl
+            // propagtes subListener's (beginEdit, endEdit, valueChanged) methods
+            // so, when CControl::beginEdit () is called, it iterates subListeners and call controlBeginEdit (this)
+            // However, this TransferCurveView does not change it's value, so listener is not needed.
+            //transferCurveView->registerControlListener(this);
+            //transferCurveView->remember();
             //curveView->setValue(0.0);
 
             update(ParamKnee,      kChanged);
@@ -738,15 +752,14 @@ private:
         return view;
     }
 
-    RLFCMP_Controller*         mainController;
-    Steinberg::Vst::Parameter* ParamKnee;
-    Steinberg::Vst::Parameter* ParamThreshold;
-    Steinberg::Vst::Parameter* ParamRatio;
-    Steinberg::Vst::Parameter* ParamMakeup;
-    Steinberg::Vst::Parameter* ParamMix;
-    TransferCurveView*         transferCurveView;
-    
-    double vuInMono   = -120.0;
+    IController*                baseController;
+    RLFCMP_Controller*          mainController;
+    Steinberg::Vst::Parameter*  ParamKnee;
+    Steinberg::Vst::Parameter*  ParamThreshold;
+    Steinberg::Vst::Parameter*  ParamRatio;
+    Steinberg::Vst::Parameter*  ParamMakeup;
+    Steinberg::Vst::Parameter*  ParamMix;
+    TransferCurveView*          transferCurveView;
 };
 
 //------------------------------------------------------------------------
@@ -770,11 +783,11 @@ public:
     {}
     ~VuMeterController() override
     {
-        vuMeterInL = nullptr;
-        vuMeterInR = nullptr;
-        vuMeterOutL = nullptr;
-        vuMeterOutR = nullptr;
-        vuMeterGR = nullptr;
+        vuMeterInL      = nullptr;
+        vuMeterInR      = nullptr;
+        vuMeterOutL     = nullptr;
+        vuMeterOutR     = nullptr;
+        vuMeterGR       = nullptr;
         pdGainReduction = nullptr;
 
         mainController->removeUIVuMeterController(this);
@@ -834,12 +847,12 @@ public:
     void updateVuMeterValue()
     {
         if (mainController != nullptr) {
-            if (vuMeterInL)  vuMeterInL-> setValue_(getVuMeterByTag(vuMeterInL->getTag()));
-            if (vuMeterInR)  vuMeterInR-> setValue_(getVuMeterByTag(vuMeterInR->getTag()));
-            if (vuMeterOutL) vuMeterOutL->setValue_(getVuMeterByTag(vuMeterOutL->getTag()));
-            if (vuMeterOutR) vuMeterOutR->setValue_(getVuMeterByTag(vuMeterOutR->getTag()));
-            if (vuMeterGR)   vuMeterGR->  setValue_(getVuMeterByTag(vuMeterGR->getTag()));
-            if (pdGainReduction) pdGainReduction->setValue(getVuMeterByTag(vuMeterGR->getTag()));
+            if (vuMeterInL)         vuMeterInL->    setValue_(getVuMeterByTag(vuMeterInL->getTag()));
+            if (vuMeterInR)         vuMeterInR->    setValue_(getVuMeterByTag(vuMeterInR->getTag()));
+            if (vuMeterOutL)        vuMeterOutL->   setValue_(getVuMeterByTag(vuMeterOutL->getTag()));
+            if (vuMeterOutR)        vuMeterOutR->   setValue_(getVuMeterByTag(vuMeterOutR->getTag()));
+            if (vuMeterGR)          vuMeterGR->     setValue_(getVuMeterByTag(vuMeterGR->getTag()));
+            if (pdGainReduction)    pdGainReduction->setValue(getVuMeterByTag(vuMeterGR->getTag()));
         }
     }
     
@@ -862,11 +875,11 @@ private:
                       const IUIDescription* /*description*/) SMTG_OVERRIDE;
 
     RLFCMP_Controller* mainController = nullptr;
-    MyVuMeter* vuMeterInL = nullptr;
-    MyVuMeter* vuMeterInR = nullptr;
-    MyVuMeter* vuMeterOutL = nullptr;
-    MyVuMeter* vuMeterOutR = nullptr;
-    MyVuMeter* vuMeterGR = nullptr;
+    MyVuMeter* vuMeterInL   = nullptr;
+    MyVuMeter* vuMeterInR   = nullptr;
+    MyVuMeter* vuMeterOutL  = nullptr;
+    MyVuMeter* vuMeterOutR  = nullptr;
+    MyVuMeter* vuMeterGR    = nullptr;
     ClickResetParamDisplay* pdGainReduction = nullptr;
     
     double vuInMono   = -120.0;

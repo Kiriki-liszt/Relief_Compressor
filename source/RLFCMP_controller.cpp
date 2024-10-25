@@ -1010,6 +1010,8 @@ public:
     
     /** Converts a normalized value to a string. */
     void toString(Vst::ParamValue _valueNormalized, Vst::String128 string) const SMTG_OVERRIDE;
+    
+    OBJ_METHODS (LogRangeParameter, RangeParameter)
 };
 //------------------------------------------------------------------------
 // LogRangeParameter Implementation
@@ -1054,6 +1056,8 @@ class LinRangeParameter : public Vst::RangeParameter
 public:
     using RangeParameter::RangeParameter;
     void toString(Vst::ParamValue _valueNormalized, Vst::String128 string) const SMTG_OVERRIDE;
+    
+    OBJ_METHODS (LinRangeParameter, RangeParameter)
 };
 //------------------------------------------------------------------------
 // LinRangeParameter Implementation
