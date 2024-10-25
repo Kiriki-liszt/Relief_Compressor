@@ -97,16 +97,19 @@ protected:
     
     static SMTG_CONSTEXPR int32 maxLAH = 256;
     
-    static SMTG_CONSTEXPR double peakEnvDecay = 0.4; //sec
-    static SMTG_CONSTEXPR double peakRMSDecay = 0.3; //sec
+    static SMTG_CONSTEXPR double peakEnvDecay = 0.4; //sec, for VU meter
+    static SMTG_CONSTEXPR double peakRMSDecay = 0.3; //sec, for VU meter
     
     // timing of detectors are important then I thought
     // if attack is set to 0, 'tone' of compressor feels like it's smashing at 0 attack, even with attack knob backed off
     static SMTG_CONSTEXPR double detectorAtk = 0.3; //msec
     static SMTG_CONSTEXPR double detectorRls = 2.0; //msec ~= HOLD
+    static SMTG_CONSTEXPR double detectorHlbtAtk = 0.8; //msec
+    static SMTG_CONSTEXPR double detectorHlbtRls = 2.0; //msec ~= HOLD
     
     // Internal datastructures ===========================================================
     std::vector<double> sidechain_EQed[maxChannel];
+    std::vector<double> level_vec[maxChannel];
     std::deque<ParamValue> lookAheadDelayLine[maxChannel];
     std::deque<ParamValue> latencyDelayLine[maxChannel];
     
@@ -146,6 +149,9 @@ protected:
     // Internal plain values =================================================
     SampleRate projectSR    = 48000.0;
     // SampleRate internalSR   = 192000.0;//actually, not used
+    
+    ParamValue hilbertDtrAtkCoef = std::sqrt(getTau(detectorHlbtAtk, projectSR));
+    ParamValue hilbertDtrRlsCoef = getTau(detectorHlbtRls, projectSR) * getTau(detectorHlbtRls, projectSR);
     
     bool       bypass       = dftBypass;
     int32      OS           = overSample_1x;

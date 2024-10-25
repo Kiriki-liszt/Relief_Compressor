@@ -228,6 +228,8 @@ tresult PLUGIN_API RLFCMP_Processor::setupProcessing (Vst::ProcessSetup& newSetu
     {
         sidechain_EQed[channel].resize(newSetup.maxSamplesPerBlock);
         std::fill(sidechain_EQed[channel].begin(), sidechain_EQed[channel].end(), 0.0);
+        level_vec[channel].resize(newSetup.maxSamplesPerBlock);
+        std::fill(level_vec[channel].begin(), level_vec[channel].end(), 0.0);
     }
     
     call_after_SR_changed ();
@@ -451,34 +453,32 @@ void RLFCMP_Processor::processAudio(
     double qirtAtkCoef = cbrt(sqrtAtkCoef); // Quintic Root
     double squrRlsCoef = rlsCoef * rlsCoef;
     double cubcRlsCoef = rlsCoef * squrRlsCoef;
-
-    double hilbertDtrAtkCoef = std::sqrt(getTau(0.8, SampleRate));
-    double hilbertDtrRlsCoef = getTau(15.0, SampleRate) * getTau(15.0, SampleRate);
     
     // because of locallity, this is faster
     for (int32 channel = 0; channel < numChannels; channel++)
     {
-        for (int sample = 0; sample < sampleFrames; sample++)
+        int32 sample = 0;
+        while (sampleFrames > sample)
         {
             // SideChain Filtering ===========================================================
             double t = SC_LF[channel].computeSVF(inputs[channel][sample]);
             t = SC_HF[channel].computeSVF(t);
             sidechain_EQed[channel][sample] = t;
+            sample++;
         }
     }
     
     int32 sample = 0;
-    // Process ===========================================================
     while (sampleFrames > sample)
     {
-        double level[2] = {0.0, 0.0};
-
+        double level[maxChannel] = {0.0, };
+        
         for (int32 channel = 0; channel < numChannels; channel++)
         {
             Vst::Sample64 inputSample = sidechain_EQed[channel][sample];
-
+            
             inputSample *= inputGain;
-
+            
             if (hilbertEnable) {
                 // Hilbert detector ===========================================================
                 for (int path = 0; path < path_num; path++)
@@ -519,28 +519,29 @@ void RLFCMP_Processor::processAudio(
         }
         
         // Link stereo ===========================================================
-        double monoSample   = 0.0;
+        double monoSample = invNumChannels * std::reduce(level, level + numChannels, 0.0);
         for (int32 channel = 0; channel < numChannels; channel++)
-        {
-            monoSample   += invNumChannels * level[channel];
-        }
-        for (int32 channel = 0; channel < numChannels; channel++)
-        {
-            level[channel] = monoSample;
-        }
+            level_vec[channel][sample] = monoSample;
         
-        for (int32 channel = 0; channel < numChannels; channel++)
+        sample++;
+    }
+        
+    for (int32 channel = 0; channel < numChannels; channel++)
+    {
+        int32 sample = 0;
+        // Process ===========================================================
+        while (sampleFrames > sample)
         {
             Vst::Sample64 inputSample = inputs[channel][sample];
             
             inputSample *= inputGain;
             
             double inputPeak = VuInputPeak[channel].processSample(inputSample);
-            double inputRMS  = VuInputRMS[channel].processSample(inputSample);
+            double inputRMS  = VuInputRMS [channel].processSample(inputSample);
             if(maxInputPeak[channel] < inputPeak) maxInputPeak[channel] = inputPeak;
             if(maxInputRMS [channel] < inputRMS ) maxInputRMS [channel] = inputRMS;
             
-            double env = 0.0;
+            double env  = 0.0;
             double gain = 1.0;
             
             // Linear scale detection ===========================================================
@@ -551,7 +552,7 @@ void RLFCMP_Processor::processAudio(
                     case detectorPeak: default:  // Metric Halo ChannelStrip MIO Comp, and Weiss DS1-MK3 if atk*3 & rls*2
                     {
                         // double r = getTau(paramRelease.ToPlain(pRelease) - detectorRls, SampleRate);
-                        double vin = sqrt(level[channel]);
+                        double vin = sqrt(level_vec[channel][sample]);
                         double delta = vin - envelope_state[channel];
                         double pp = (delta > 0) ? 1.0 : 0.0; // smooth::Logistics(delta, k_rms); // (delta > 0) ? 1.0 : 0.0;
                         double nn = 1.0 - pp;
@@ -562,7 +563,7 @@ void RLFCMP_Processor::processAudio(
                     }
                     case detectorRMS: // Semi-true-RMS. a true RMS would use square-sum-normalize-sqrt, not this 1p-filter
                     {
-                        double vin = level[channel];
+                        double vin = level_vec[channel][sample];
                         double delta = vin - envelope_state[channel];
                         double pp = smooth::Logistics(delta, k_rms); // (delta > 0) ? 1.0 : 0.0;
                         double nn = 1.0 - pp;
@@ -608,7 +609,7 @@ void RLFCMP_Processor::processAudio(
             else
             {
                 // Transfer Curve ===========================================================
-                env = DecibelConverter::ToDecibel(sqrt(level[channel]));
+                env = DecibelConverter::ToDecibel(sqrt(level_vec[channel][sample]));
                 
                 double overshoot = env - (threshold);
                 
@@ -661,9 +662,9 @@ void RLFCMP_Processor::processAudio(
                 // Look-ahead FIR ===========================================================
                 if (lookaheadEnable)
                 {
-                    lookAheadDelayLine[channel].push_back(gain);
                     // effectively parallelized version of the default std::inner_product
                     // lookAheadDelayLine[channel].end() - 1 - (lookaheadSize - 1)
+                    lookAheadDelayLine[channel].push_back(gain);
                     gain = std::transform_reduce(LAH_coef, LAH_coef + lookaheadSize, lookAheadDelayLine[channel].end() - lookaheadSize, 0.0);
                     lookAheadDelayLine[channel].pop_front();
                 }
@@ -677,18 +678,18 @@ void RLFCMP_Processor::processAudio(
                 if (gain < GR_Max) GR_Max = gain;
                 gain = DecibelConverter::ToGain(gain);
             }
-                
+            
             if (scListen)
             {
                 inputSample = sidechain_EQed[channel][sample];
                 gain = 1.0;
                 makeup = 1.0;
             }
-
+            
             latencyDelayLine[channel].push_back(inputSample);
             inputSample = *(latencyDelayLine[channel].end() - 1 - lookaheadSize);
             latencyDelayLine[channel].pop_front();
-
+            
             double dry = inputSample;
             
             inputSample *= gain;  // apply gain reduction
@@ -707,8 +708,8 @@ void RLFCMP_Processor::processAudio(
             if (softBypass) inputSample = inputs[channel][sample];
             
             outputs[channel][sample] = (SampleType)(inputSample);
+            sample++;
         }
-        sample++;
     }
     if (numChannels == 1)
     {
@@ -768,7 +769,10 @@ void RLFCMP_Processor::call_after_SR_changed ()
 
 void RLFCMP_Processor::call_after_parameter_changed ()
 {
-    dtrAtkCoef  = getTau(detectorAtk,  projectSR); 
+    hilbertDtrAtkCoef = std::sqrt(getTau(detectorHlbtAtk, projectSR));
+    hilbertDtrRlsCoef = getTau(detectorHlbtRls, projectSR) * getTau(detectorHlbtRls, projectSR);
+    
+    dtrAtkCoef  = getTau(detectorAtk,  projectSR);
     dtrRlsCoef  = getTau(detectorRls,  projectSR);
     
     atkCoef     = getTau(attack - detectorAtk,  projectSR);
