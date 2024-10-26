@@ -191,6 +191,7 @@ tresult PLUGIN_API RLFCMP_Processor::process (Vst::ProcessData& data)
         sendFloat(msgOutputPeakR,   fOutputVuPeak[1]);
         sendFloat(msgOutputRMSL,    fOutputVuRMS[0]);
         sendFloat(msgOutputRMSR,    fOutputVuRMS[1]);
+        sendFloat(msgDetectorLevel, fDetectorLevel);
         sendFloat(msgGainReduction, fGainReduction);
     }
 
@@ -440,12 +441,13 @@ void RLFCMP_Processor::processAudio(
 )
 {
     double invNumChannels = 1.0 / numChannels;
-    ParamValue GR_Max = 0.0;
-    
+
     ParamValue maxInputPeak[2] = {0.0, };
     ParamValue maxInputRMS[2] = {0.0, };
     ParamValue maxOutputPeak[2] = {0.0, };
     ParamValue maxOutputRMS[2] = {0.0, };
+    ParamValue DT_Max = 0.0;
+    ParamValue GR_Max = 0.0;
     
     double sqrtDtrAtkCoef = sqrt(dtrAtkCoef);
     double powrDtrRlsCoef = dtrRlsCoef * dtrRlsCoef;
@@ -522,7 +524,7 @@ void RLFCMP_Processor::processAudio(
         double monoSample = invNumChannels * std::reduce(level, level + numChannels, 0.0);
         for (int32 channel = 0; channel < numChannels; channel++)
             level_vec[channel][sample] = monoSample;
-        
+        if (DT_Max < monoSample) DT_Max = monoSample;
         sample++;
     }
         
@@ -735,6 +737,7 @@ void RLFCMP_Processor::processAudio(
         fInputVuRMS  [1] = DecibelConverter::ToDecibel(maxInputRMS  [1]);
         fOutputVuRMS [1] = DecibelConverter::ToDecibel(maxOutputRMS [1]);
     }
+    fDetectorLevel = DecibelConverter::ToDecibel(sqrt(DT_Max));
     fGainReduction = GR_Max;
     return;
 }

@@ -143,6 +143,7 @@ protected:
     // Values for GUI ========================================================
     ParamValue fInputVuRMS [maxChannel] = {0.0, }, fOutputVuRMS [maxChannel] = {0.0, };
     ParamValue fInputVuPeak[maxChannel] = {0.0, }, fOutputVuPeak[maxChannel] = {0.0, };
+    ParamValue fDetectorLevel = 0.0;
     ParamValue fGainReduction = 0.0;
     bool sendUI = false;
     

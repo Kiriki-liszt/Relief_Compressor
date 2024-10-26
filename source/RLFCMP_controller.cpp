@@ -1666,6 +1666,16 @@ tresult PLUGIN_API RLFCMP_Controller::notify(Vst::IMessage* message)
         if (message->getAttributes ()->getFloat (msgOutputPeakR, getValue) == kResultTrue) vuOutRPeak  = getValue;
         if (message->getAttributes ()->getFloat (msgOutputRMSL, getValue) == kResultTrue) vuOutLRMS  = getValue;
         if (message->getAttributes ()->getFloat (msgOutputRMSR, getValue) == kResultTrue) vuOutRRMS  = getValue;
+        if (message->getAttributes ()->getFloat (msgDetectorLevel, getValue) == kResultTrue)
+        {
+            if (!transferCurveViewControllerControllers.empty())
+            {
+                for (auto &iter : transferCurveViewControllerControllers)
+                {
+                    iter->setVuInMono(getValue);
+                }
+            }
+        }
         if (message->getAttributes ()->getFloat (msgGainReduction, getValue) == kResultTrue)
         {
             vuGainReduction  = getValue;
@@ -1686,16 +1696,7 @@ tresult PLUGIN_API RLFCMP_Controller::notify(Vst::IMessage* message)
                     iter->updateVuMeterValue();
                 }
             }
-            
-            if (!transferCurveViewControllerControllers.empty())
-            {
-                for (auto &iter : transferCurveViewControllerControllers)
-                {
-                    iter->setVuInMono(0.5 * vuInLPeak + 0.5 * vuInRPeak);
-                }
-            }
         }
-        
         return kResultOk;
     }
     return EditControllerEx1::notify(message);

@@ -611,14 +611,15 @@ static const ParameterConverter paramMix          (minMix,       maxMix,       P
 static const ParameterConverter paramInput        (minInput,     maxInput,     ParameterConverter::paramType::range);
 static const ParameterConverter paramOutput       (minOutput,    maxOutput,    ParameterConverter::paramType::range);
 
-static const char* msgInputPeakL = "InputPeakL";
-static const char* msgInputPeakR = "InputPeakR";
-static const char* msgInputRMSL = "InputRMSL";
-static const char* msgInputRMSR = "InputRMSR";
-static const char* msgOutputPeakL = "OutputPeakL";
-static const char* msgOutputPeakR = "OutputPeakR";
-static const char* msgOutputRMSL = "OutputRMSL";
-static const char* msgOutputRMSR = "OutputRMSR";
+static const char* msgInputPeakL    = "InputPeakL";
+static const char* msgInputPeakR    = "InputPeakR";
+static const char* msgInputRMSL     = "InputRMSL";
+static const char* msgInputRMSR     = "InputRMSR";
+static const char* msgOutputPeakL   = "OutputPeakL";
+static const char* msgOutputPeakR   = "OutputPeakR";
+static const char* msgOutputRMSL    = "OutputRMSL";
+static const char* msgOutputRMSR    = "OutputRMSR";
+static const char* msgDetectorLevel = "DetectorLevel";
 static const char* msgGainReduction = "GainReduction";
 
 //------------------------------------------------------------------------
