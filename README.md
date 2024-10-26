@@ -69,6 +69,8 @@ VSTGUI 4.12 used
 ## Version logs
 
 v0.1.0 : intial beta.  
+v0.1.1 : remove setDirty, remove registerControlListener.  
+v0.1.2 : Transfer Curve meter now follows sidechain, not direct input.  
 
 ## Detectors  
 
