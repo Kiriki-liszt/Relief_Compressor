@@ -127,18 +127,14 @@ protected:
     
     ParamValue LAH_coef[maxLAH] = {0.0, };
     
-    LevelEnvelopeFollower VuInputRMS[maxChannel] = {
-        LevelEnvelopeFollower(LevelEnvelopeFollower::rmsEnv, peakRMSDecay),
-        LevelEnvelopeFollower(LevelEnvelopeFollower::rmsEnv, peakRMSDecay)};
-    LevelEnvelopeFollower VuOutputRMS[maxChannel] = {
-        LevelEnvelopeFollower(LevelEnvelopeFollower::rmsEnv, peakRMSDecay),
-        LevelEnvelopeFollower(LevelEnvelopeFollower::rmsEnv, peakRMSDecay)};
-    LevelEnvelopeFollower VuInputPeak[maxChannel] = {
-        LevelEnvelopeFollower(LevelEnvelopeFollower::peakEnv, peakEnvDecay),
-        LevelEnvelopeFollower(LevelEnvelopeFollower::peakEnv, peakEnvDecay)};
-    LevelEnvelopeFollower VuOutputPeak[maxChannel] = {
-        LevelEnvelopeFollower(LevelEnvelopeFollower::peakEnv, peakEnvDecay),
-        LevelEnvelopeFollower(LevelEnvelopeFollower::peakEnv, peakEnvDecay)};
+    static SMTG_CONSTEXPR int32 _rms = LevelEnvelopeFollower::rmsEnv;
+    static SMTG_CONSTEXPR int32 _peak = LevelEnvelopeFollower::peakEnv;
+    LevelEnvelopeFollower VuInputRMS[maxChannel]   = { LevelEnvelopeFollower(_rms, peakRMSDecay),  LevelEnvelopeFollower(_rms, peakRMSDecay)};
+    LevelEnvelopeFollower VuOutputRMS[maxChannel]  = { LevelEnvelopeFollower(_rms, peakRMSDecay),  LevelEnvelopeFollower(_rms, peakRMSDecay)};
+    LevelEnvelopeFollower VuInputPeak[maxChannel]  = { LevelEnvelopeFollower(_peak, peakEnvDecay), LevelEnvelopeFollower(_peak, peakEnvDecay)};
+    LevelEnvelopeFollower VuOutputPeak[maxChannel] = { LevelEnvelopeFollower(_peak, peakEnvDecay), LevelEnvelopeFollower(_peak, peakEnvDecay)};
+    LevelEnvelopeFollower VuDetector = LevelEnvelopeFollower(_peak, peakEnvDecay);
+    
     
     // Values for GUI ========================================================
     ParamValue fInputVuRMS [maxChannel] = {0.0, }, fOutputVuRMS [maxChannel] = {0.0, };

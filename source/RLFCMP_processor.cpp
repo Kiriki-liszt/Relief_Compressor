@@ -524,7 +524,8 @@ void RLFCMP_Processor::processAudio(
         double monoSample = invNumChannels * std::reduce(level, level + numChannels, 0.0);
         for (int32 channel = 0; channel < numChannels; channel++)
             level_vec[channel][sample] = monoSample;
-        if (DT_Max < monoSample) DT_Max = monoSample;
+        double localDetectorLevel = VuDetector.processSample(sqrt(monoSample));
+        if (DT_Max < localDetectorLevel) DT_Max = localDetectorLevel;
         sample++;
     }
         
@@ -737,7 +738,7 @@ void RLFCMP_Processor::processAudio(
         fInputVuRMS  [1] = DecibelConverter::ToDecibel(maxInputRMS  [1]);
         fOutputVuRMS [1] = DecibelConverter::ToDecibel(maxOutputRMS [1]);
     }
-    fDetectorLevel = DecibelConverter::ToDecibel(sqrt(DT_Max));
+    fDetectorLevel = DecibelConverter::ToDecibel(DT_Max);
     fGainReduction = GR_Max;
     return;
 }
