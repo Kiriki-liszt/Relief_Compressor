@@ -1312,7 +1312,8 @@ tresult PLUGIN_API RLFCMP_Controller::initialize (FUnknown* context)
     {
         zoomParameter->appendString(it->title);
     }
-    zoomParameter->setNormalized(zoomParameter->toNormalized(2));
+    zoomParameter->setNormalized(zoomParameter->toNormalized(dftZoom));
+    zoomParameter->getInfo().defaultNormalizedValue = zoomParameter->toNormalized(dftZoom);
     zoomParameter->addDependent(this);
     uiParameters.addParameter(zoomParameter);
     
