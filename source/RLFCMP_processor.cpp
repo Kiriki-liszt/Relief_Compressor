@@ -212,10 +212,13 @@ inline void RLFCMP_Processor::sendFloat (Steinberg::Vst::IAttributeList::AttrID 
 tresult PLUGIN_API RLFCMP_Processor::setupProcessing (Vst::ProcessSetup& newSetup)
 {
     /*
-     when instantiated, getState happens.
-     then setupProcessing.
-     then setState, but it not happen if first time instantiating.
-     */
+         createInstance
+         initialize
+         Processor::getState
+         setupProcessing
+         setState
+         getLatencySamples
+    */
 
     // fprintf (stdout, "setupProcessing\n");
     
@@ -354,7 +357,7 @@ tresult PLUGIN_API RLFCMP_Processor::setState (IBStream* state)
     if (streamer.readBool  (savedSoftBypass)    == false) savedSoftBypass      = dftSoftBypass;
     
     bypass      = savedBypass;
-    OS          = savedOS;
+    OS          = savedOS;                  // UNUSED
     
     scLfIn      = savedScLfIn;
     scLfType    = savedScLfType;
@@ -399,7 +402,7 @@ tresult PLUGIN_API RLFCMP_Processor::getState (IBStream* state)
     IBStreamer streamer (state, kLittleEndian);
     
     streamer.writeBool(bypass);
-    streamer.writeInt32(OS);
+    streamer.writeInt32(OS);            // UNUSED
     
     streamer.writeBool(scLfIn);
     streamer.writeInt32(scLfType);
@@ -751,8 +754,8 @@ void RLFCMP_Processor::call_after_SR_changed ()
     
     lookaheadSize = std::min((int)(0.5 * 0.001 * projectSR), maxLAH); // fixed lookahead at 0.5ms
 
-    for (auto& iter : lookAheadDelayLine) iter.resize(maxLAH);
-    for (auto& iter : latencyDelayLine)   iter.resize(maxLAH);
+    for (auto& iter : lookAheadDelayLine) iter.resize(maxLAH, 0.0);
+    for (auto& iter : latencyDelayLine)   iter.resize(maxLAH, 0.0);
 
     Kaiser::calcFilter2(lookaheadSize, 3.0, LAH_coef); // ((alpha * pi)/0.1102) + 8.7, alpha == 3 -> -94.22 dB
     

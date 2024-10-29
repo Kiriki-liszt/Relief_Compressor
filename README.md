@@ -17,13 +17,20 @@ Windows and Mac, VST3 and AU.
 <img src="https://github.com/Kiriki-liszt/Relief_Compressor/blob/main/screenshot/Relief%20Compressor%20Main%20page.png?raw=true"  width="600"/>
 <img src="https://github.com/Kiriki-liszt/Relief_Compressor/blob/main/screenshot/Relief%20Compressor%20SC%20page.png?raw=true"  width="600"/>  
 
-## Windows  
+## Compatibility  
 
-- x64  
+VST3, AUv2  
 
-## macOS  
+## System Requirements
 
-- 10.13(High Sierra) to 15.0(Sequoia)  
+Audio Units  
+
+* Mac OS X 10.13 or later (Intel or Apple Silicon Native)
+
+VST3  
+
+* Mac OS X 10.13 or later (Intel or Apple Silicon Native)
+* Windows 10 or later
 
 ## How to use  
 
@@ -71,6 +78,7 @@ VSTGUI 4.12 used
 v0.1.0 : intial beta.  
 v0.1.1 : remove setDirty, remove registerControlListener.  
 v0.1.2 : Transfer Curve meter now follows sidechain, not direct input.  
+v1.0.0 : Saving AU fixed.  
 
 ## Detectors  
 

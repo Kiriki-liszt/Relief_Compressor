@@ -452,17 +452,6 @@ protected:
     typedef std::vector<Steinberg::Vst::EditorView*> EditorVector;
     EditorVector editors;
     
-    // zoom title-value struct
-    struct ZoomFactor
-    {
-        const Steinberg::tchar* title;
-        double factor;
-
-        ZoomFactor(const Steinberg::tchar* title, double factor) : title(title), factor(factor) {}
-    };
-    typedef std::vector<ZoomFactor> ZoomFactorVector;
-    ZoomFactorVector zoomFactors;
-    
     // sub-controller list
     using UIVuMeterControllerList = std::vector<VuMeterController*>;
     using UIEQCurveViewControllerList = std::vector<EQCurveViewController*>;
@@ -472,7 +461,37 @@ protected:
     UIEQCurveViewControllerList eqCurveViewControllers;
     UITransferCurveViewControllerList transferCurveViewControllerControllers;
 
-    ParamValue pZoom;
+    bool       bypass       = dftBypass;
+    int32      zoom         = dftZoom;
+    int32      OS           = overSample_1x;
+    
+    bool       scLfIn       = dftScLfIn;
+    int32      scLfType     = ScTypePass;
+    ParamValue scLfFreq     = dftScLfFreq;
+    ParamValue scLfGain     = dftScLfGain;
+    bool       scHfIn       = dftScHfIn;
+    int32      scHfType     = ScTypeShelf;
+    ParamValue scHfFreq     = dftScHfFreq;
+    ParamValue scHfGain     = dftScHfGain;
+    bool       scListen     = dftScListen;
+    
+    int32      dType        = dftDetectorType;
+    int32      scTopology   = dftSidechainTopology;
+    bool       hilbertEnable    = dftHilbertEnable;
+    bool       lookaheadEnable  = dftLookaheadEnable;
+    ParamValue attack       = dftAttack;
+    ParamValue _release      = dftRelease;
+
+    ParamValue threshold    = dftThreshold;
+    ParamValue ratio        = dftRatio;
+    ParamValue knee         = dftKnee;
+    ParamValue makeup       = DecibelConverter::ToGain(dftMakeup);
+
+    ParamValue mix          = dftMix/maxMix;
+    ParamValue inputGain    = DecibelConverter::ToGain(dftInput);
+    ParamValue outputGain   = DecibelConverter::ToGain(dftOutput);
+    bool       softBypass   = dftSoftBypass;
+    
     Steinberg::Vst::ParamValue vuInLRMS = 0.0, vuInRRMS = 0.0;
     Steinberg::Vst::ParamValue vuInLPeak = 0.0, vuInRPeak = 0.0;
     Steinberg::Vst::ParamValue vuOutLRMS = 0.0, vuOutRRMS = 0.0;

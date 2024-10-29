@@ -1307,17 +1307,6 @@ tresult PLUGIN_API RLFCMP_Controller::initialize (FUnknown* context)
     parameters.addParameter(STR16("SoftBypass"), nullptr, stepCount, defaultVal, flags, tag);
 
     // GUI only parameter
-    if (zoomFactors.empty())
-    {
-        zoomFactors.push_back(ZoomFactor(STR("50%"),  0.50)); // 0/6
-        zoomFactors.push_back(ZoomFactor(STR("75%"),  0.75)); // 1/6
-        zoomFactors.push_back(ZoomFactor(STR("100%"), 1.00)); // 2/6
-        zoomFactors.push_back(ZoomFactor(STR("125%"), 1.25)); // 3/6
-        zoomFactors.push_back(ZoomFactor(STR("150%"), 1.50)); // 4/6
-        zoomFactors.push_back(ZoomFactor(STR("175%"), 1.75)); // 5/6
-        zoomFactors.push_back(ZoomFactor(STR("200%"), 2.00)); // 6/6
-    }
-
     Vst::StringListParameter* zoomParameter = new Vst::StringListParameter(STR("Zoom"), kParamZoom);
     for (ZoomFactorVector::const_iterator it = zoomFactors.begin(), end = zoomFactors.end(); it != end; ++it)
     {
@@ -1359,6 +1348,7 @@ tresult PLUGIN_API RLFCMP_Controller::setComponentState (IBStream* state)
     IBStreamer streamer(state, kLittleEndian);
 
     bool    savedBypass     = dftBypass;
+    // int32   savedZoom       = dftZoom;
     int32   savedOS         = overSample_1x;
     
     bool    savedScLfIn     = dftScLfIn;
@@ -1389,6 +1379,7 @@ tresult PLUGIN_API RLFCMP_Controller::setComponentState (IBStream* state)
     bool    savedSoftBypass      = dftSoftBypass;
 
     if (streamer.readBool  (savedBypass)        == false) savedBypass     = dftBypass;
+    // if (streamer.readInt32 (savedZoom)          == false) savedZoom       = dftZoom;
     if (streamer.readInt32 (savedOS)            == false) savedOS         = overSample_1x;
     
     if (streamer.readBool  (savedScLfIn)        == false) savedScLfIn     = dftScLfIn;
@@ -1419,7 +1410,8 @@ tresult PLUGIN_API RLFCMP_Controller::setComponentState (IBStream* state)
     if (streamer.readBool  (savedSoftBypass)    == false) savedSoftBypass      = dftSoftBypass;
 
     setParamNormalized(kParamBypass,    savedBypass ? 1 : 0);
-    setParamNormalized(kParamOS,        savedOS);
+    // setParamNormalized(kParamZoom,      savedZoom);
+    // setParamNormalized(kParamOS,        savedOS);
 
     setParamNormalized(kParamScLfIn,    savedScLfIn ? 1 : 0);
     setParamNormalized(kParamScLfType,  paramScLfType.ToNormalized(savedScLfType));
@@ -1448,6 +1440,37 @@ tresult PLUGIN_API RLFCMP_Controller::setComponentState (IBStream* state)
     setParamNormalized(kParamOutput,        paramOutput.ToNormalized(DecibelConverter::ToDecibel(savedOutputGain)));
     setParamNormalized(kParamSoftBypass,    savedSoftBypass ? 1 : 0);
     
+    bypass       = savedBypass;
+    // pZoom;
+    OS           = savedOS;
+    
+    scLfIn       = savedScLfIn;
+    scLfType     = savedScLfType;
+    scLfFreq     = savedScLfFreq;
+    scLfGain     = savedScLfGain;
+    scHfIn       = savedScHfIn;
+    scHfType     = savedScHfType;
+    scHfFreq     = savedScHfFreq;
+    scHfGain     = savedScHfGain;
+    scListen     = savedScListen;
+    
+    dType        = savedDType;
+    scTopology   = savedScTopology;
+    hilbertEnable    = savedHilbertEnable;
+    lookaheadEnable  = savedLookaheadEnable;
+    attack       = savedAttack;
+    _release      = savedRelease;
+
+    threshold    = savedThreshold;
+    ratio        = savedRatio;
+    knee         = savedKnee;
+    makeup       = DecibelConverter::ToDecibel(savedMakeup);
+
+    mix          = savedMix;
+    inputGain    = DecibelConverter::ToDecibel(savedInputGain);
+    outputGain   = DecibelConverter::ToDecibel(savedOutputGain);
+    softBypass   = savedSoftBypass;
+    
     return kResultOk;
 }
 
@@ -1457,16 +1480,132 @@ tresult PLUGIN_API RLFCMP_Controller::setState (IBStream* state)
     // Here you get the state of the controller
     if (!state)
         return kResultFalse;
-
+    
     IBStreamer streamer(state, kLittleEndian);
+
+    // bool    savedBypass     = dftBypass;
+    int32   savedZoom       = dftZoom;
+    int32   savedOS         = overSample_1x;
     
-    ParamValue savedZoom = 2.0 / 6.0;
+    bool    savedScLfIn     = dftScLfIn;
+    int32   savedScLfType   = ScTypePass;
+    double  savedScLfFreq   = dftScLfFreq;
+    double  savedScLfGain   = dftScLfGain;
+    bool    savedScHfIn     = dftScHfIn;
+    int32   savedScHfType   = ScTypeShelf;
+    double  savedScHfFreq   = dftScHfFreq;
+    double  savedScHfGain   = dftScHfGain;
+    bool    savedScListen   = dftScListen;
     
-    if (streamer.readDouble(savedZoom)          == false) return kResultFalse;
+    int32   savedDType           = dftDetectorType;
+    int32   savedScTopology      = dftSidechainTopology;
+    bool    savedHilbertEnable   = dftHilbertEnable;
+    bool    savedLookaheadEnable = dftLookaheadEnable;
+    double  savedAttack          = dftAttack;
+    double  savedRelease         = dftRelease;
     
-    pZoom          = savedZoom;
+    double  savedThreshold       = dftThreshold;
+    double  savedRatio           = dftRatio;
+    double  savedKnee            = dftKnee;
+    double  savedMakeup          = DecibelConverter::ToGain(dftMakeup);
     
-    setParamNormalized(kParamZoom,       savedZoom);
+    double  savedMix             = dftMix/maxMix;
+    double  savedInputGain       = DecibelConverter::ToGain(dftInput);
+    double  savedOutputGain      = DecibelConverter::ToGain(dftOutput);
+    bool    savedSoftBypass      = dftSoftBypass;
+
+    // if (streamer.readBool  (savedBypass)        == false) savedBypass     = dftBypass;
+    if (streamer.readInt32 (savedZoom)          == false) savedZoom       = dftZoom;
+    if (streamer.readInt32 (savedOS)            == false) savedOS         = overSample_1x;
+    
+    if (streamer.readBool  (savedScLfIn)        == false) savedScLfIn     = scLfIn;
+    if (streamer.readInt32 (savedScLfType)      == false) savedScLfType   = scLfType;
+    if (streamer.readDouble(savedScLfFreq)      == false) savedScLfFreq   = scLfFreq;
+    if (streamer.readDouble(savedScLfGain)      == false) savedScLfGain   = scLfGain;
+    if (streamer.readBool  (savedScHfIn)        == false) savedScHfIn     = scHfIn;
+    if (streamer.readInt32 (savedScHfType)      == false) savedScHfType   = scHfType;
+    if (streamer.readDouble(savedScHfFreq)      == false) savedScHfFreq   = scHfFreq;
+    if (streamer.readDouble(savedScHfGain)      == false) savedScHfGain   = scHfGain;
+    if (streamer.readBool  (savedScListen)      == false) savedScListen   = scListen;
+    
+    if (streamer.readInt32 (savedDType)             == false) savedDType           = dType;
+    if (streamer.readInt32 (savedScTopology)        == false) savedScTopology      = scTopology;
+    if (streamer.readBool  (savedHilbertEnable)     == false) savedHilbertEnable   = hilbertEnable;
+    if (streamer.readBool  (savedLookaheadEnable)   == false) savedLookaheadEnable = lookaheadEnable;
+    if (streamer.readDouble(savedAttack)            == false) savedAttack          = attack;
+    if (streamer.readDouble(savedRelease)           == false) savedRelease         = _release;
+    
+    if (streamer.readDouble(savedThreshold)     == false) savedThreshold       = threshold;
+    if (streamer.readDouble(savedRatio)         == false) savedRatio           = ratio;
+    if (streamer.readDouble(savedKnee)          == false) savedKnee            = knee;
+    if (streamer.readDouble(savedMakeup)        == false) savedMakeup          = DecibelConverter::ToGain(makeup);
+    
+    if (streamer.readDouble(savedMix)           == false) savedMix             = mix;
+    if (streamer.readDouble(savedInputGain)     == false) savedInputGain       = DecibelConverter::ToGain(inputGain);
+    if (streamer.readDouble(savedOutputGain)    == false) savedOutputGain      = DecibelConverter::ToGain(outputGain);
+    if (streamer.readBool  (savedSoftBypass)    == false) savedSoftBypass      = softBypass;
+
+    // setParamNormalized(kParamBypass,    savedBypass ? 1 : 0);
+    setParamNormalized(kParamZoom,      paramZoom.ToNormalized(savedZoom));
+    // setParamNormalized(kParamOS,        savedOS); // UNUSED
+
+    setParamNormalized(kParamScLfIn,    savedScLfIn ? 1 : 0);
+    setParamNormalized(kParamScLfType,  paramScLfType.ToNormalized(savedScLfType));
+    setParamNormalized(kParamScLfFreq,  paramScLfFreq.ToNormalized(savedScLfFreq));
+    setParamNormalized(kParamScLfGain,  paramScLfGain.ToNormalized(savedScLfGain));
+    setParamNormalized(kParamScHfIn,    savedScHfIn ? 1 : 0);
+    setParamNormalized(kParamScHfType,  paramScHfType.ToNormalized(savedScHfType));
+    setParamNormalized(kParamScHfFreq,  paramScHfFreq.ToNormalized(savedScHfFreq));
+    setParamNormalized(kParamScHfGain,  paramScHfGain.ToNormalized(savedScHfGain));
+    setParamNormalized(kParamScListen,  savedScListen ? 1 : 0);
+    
+    setParamNormalized(kParamDetectorType,      paramDetectorType.ToNormalized(savedDType));
+    setParamNormalized(kParamSidechainTopology, paramSidechainTopology.ToNormalized(savedScTopology));
+    setParamNormalized(kParamHilbertEnable,     savedHilbertEnable ? 1 : 0);
+    setParamNormalized(kParamLookaheadEnable,   savedLookaheadEnable ? 1 : 0);
+    setParamNormalized(kParamAttack,            paramAttack.ToNormalized(savedAttack));
+    setParamNormalized(kParamRelease,           paramRelease.ToNormalized(savedRelease));
+    
+    setParamNormalized(kParamThreshold,     paramThreshold.ToNormalized(savedThreshold));
+    setParamNormalized(kParamRatio,         paramRatio.ToNormalized(savedRatio));
+    setParamNormalized(kParamKnee,          paramKnee.ToNormalized(savedKnee));
+    setParamNormalized(kParamMakeup,        paramMakeup.ToNormalized(DecibelConverter::ToDecibel(savedMakeup)));
+    
+    setParamNormalized(kParamMix,           savedMix);
+    setParamNormalized(kParamInput,         paramInput.ToNormalized(DecibelConverter::ToDecibel(savedInputGain)));
+    setParamNormalized(kParamOutput,        paramOutput.ToNormalized(DecibelConverter::ToDecibel(savedOutputGain)));
+    setParamNormalized(kParamSoftBypass,    savedSoftBypass ? 1 : 0);
+    
+    // bypass       = savedBypass;
+    zoom         = savedZoom;
+    // OS           = savedOS;  // UNUSED
+    
+    scLfIn       = savedScLfIn;
+    scLfType     = savedScLfType;
+    scLfFreq     = savedScLfFreq;
+    scLfGain     = savedScLfGain;
+    scHfIn       = savedScHfIn;
+    scHfType     = savedScHfType;
+    scHfFreq     = savedScHfFreq;
+    scHfGain     = savedScHfGain;
+    scListen     = savedScListen;
+    
+    dType        = savedDType;
+    scTopology   = savedScTopology;
+    hilbertEnable    = savedHilbertEnable;
+    lookaheadEnable  = savedLookaheadEnable;
+    attack       = savedAttack;
+    _release      = savedRelease;
+
+    threshold    = savedThreshold;
+    ratio        = savedRatio;
+    knee         = savedKnee;
+    makeup       = DecibelConverter::ToDecibel(savedMakeup);
+
+    mix          = savedMix;
+    inputGain    = DecibelConverter::ToDecibel(savedInputGain);
+    outputGain   = DecibelConverter::ToDecibel(savedOutputGain);
+    softBypass   = savedSoftBypass;
     
     return kResultTrue;
 }
@@ -1481,10 +1620,68 @@ tresult PLUGIN_API RLFCMP_Controller::getState (IBStream* state)
         return kResultFalse;
     
     IBStreamer streamer(state, kLittleEndian);
+
+    // bypass       = getParamNormalized(kParamBypass) > 0 ? true : false;
+    zoom         = paramZoom.ToPlainList(getParamNormalized(kParamZoom));
+    // OS           = getParamNormalized(kParamOS); // UNUSED, don't update
     
-    pZoom = getParamNormalized(kParamZoom);
+    scLfIn       = getParamNormalized(kParamScLfIn) > 0 ? true : false;
+    scLfType     = paramScLfType.ToPlainList(getParamNormalized(kParamScLfType));
+    scLfFreq     = paramScLfFreq.ToPlain(getParamNormalized(kParamScLfFreq));
+    scLfGain     = paramScLfGain.ToPlain(getParamNormalized(kParamScLfGain));
+    scHfIn       = getParamNormalized(kParamScHfIn) > 0 ? true : false;
+    scHfType     = paramScHfType.ToPlainList(getParamNormalized(kParamScHfType));
+    scHfFreq     = paramScHfFreq.ToPlain(getParamNormalized(kParamScHfFreq));
+    scHfGain     = paramScHfGain.ToPlain(getParamNormalized(kParamScHfGain));
+    scListen     = getParamNormalized(kParamScListen) > 0 ? true : false;
     
-    if (streamer.writeDouble(pZoom) == false) return kResultFalse;
+    dType        = paramDetectorType.ToPlainList(getParamNormalized(kParamDetectorType));
+    scTopology   = paramSidechainTopology.ToPlainList(getParamNormalized(kParamSidechainTopology));
+    hilbertEnable    = getParamNormalized(kParamHilbertEnable) > 0 ? true : false;
+    lookaheadEnable  = getParamNormalized(kParamLookaheadEnable) > 0 ? true : false;
+    attack       = paramAttack.ToPlain(getParamNormalized(kParamAttack));
+    _release      = paramRelease.ToPlain(getParamNormalized(kParamRelease));
+
+    threshold    = paramThreshold.ToPlain(getParamNormalized(kParamThreshold));
+    ratio        = paramRatio.ToPlain(getParamNormalized(kParamRatio));
+    knee         = paramKnee.ToPlain(getParamNormalized(kParamKnee));
+    makeup       = DecibelConverter::ToGain(paramMakeup.ToPlain(getParamNormalized(kParamMakeup)));
+
+    mix          = getParamNormalized(kParamMix);
+    inputGain    = DecibelConverter::ToGain(paramInput.ToPlain(getParamNormalized(kParamInput)));
+    outputGain   = DecibelConverter::ToGain(paramOutput.ToPlain(getParamNormalized(kParamOutput)));
+    softBypass   = getParamNormalized(kParamSoftBypass) > 0 ? true : false;
+    
+    // streamer.writeBool(bypass);
+    streamer.writeInt32(zoom);
+    streamer.writeInt32(OS);            // UNUSED
+    
+    streamer.writeBool(scLfIn);
+    streamer.writeInt32(scLfType);
+    streamer.writeDouble(scLfFreq);
+    streamer.writeDouble(scLfGain);
+    streamer.writeBool(scHfIn);
+    streamer.writeInt32(scHfType);
+    streamer.writeDouble(scHfFreq);
+    streamer.writeDouble(scHfGain);
+    streamer.writeBool(scListen);
+    
+    streamer.writeInt32(dType);
+    streamer.writeInt32(scTopology);
+    streamer.writeBool(hilbertEnable);
+    streamer.writeBool(lookaheadEnable);
+    streamer.writeDouble(attack);
+    streamer.writeDouble(_release);
+    
+    streamer.writeDouble(threshold);
+    streamer.writeDouble(ratio);
+    streamer.writeDouble(knee);
+    streamer.writeDouble(makeup);     // saved in lin gain, not dB
+    
+    streamer.writeDouble(mix);
+    streamer.writeDouble(inputGain);  // saved in lin gain, not dB
+    streamer.writeDouble(outputGain); // saved in lin gain, not dB
+    streamer.writeBool(softBypass);
     
     return kResultTrue;
 }
