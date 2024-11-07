@@ -10,7 +10,7 @@ Fixed Look-Ahead at 0.5ms. It uses Kaiser-Bessel FIR as lookahead smoother.
 Windows and Mac, VST3 and AU.  
 
 [![GitHub Release](https://img.shields.io/github/v/release/kiriki-liszt/Relief_Compressor?style=flat-square&label=Get%20latest%20Release)](https://github.com/Kiriki-liszt/Relief_Compressor/releases/latest)
-[![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/kiriki-liszt/Relief_Compressor/total?style=flat-square&label=total%20downloads&color=blue)](https://github.com/Kiriki-liszt/Relief_Compressor/releases/latest)  
+[![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/kiriki-liszt/Relief_Compressor/total?style=flat-square&label=total%20downloads&color=blue)](https://tooomm.github.io/github-release-stats/?username=Kiriki-liszt&repository=Relief_Compressor)  
 
 [![Static Badge](https://img.shields.io/badge/coffee%20maybe%3F%20%3D%5D%20-gray?style=for-the-badge&logo=buy-me-a-coffee)](https://buymeacoffee.com/kirikiaris)  
 
