@@ -96,11 +96,13 @@ A true RMS would use square-normalize-sum-sqrt.
 ### Linear  
 
 Detects level in linear gain scale, and then calculates gain reduction.  
+Attack/Release envelope is applied at detected level.  
 It lets fast peaks go through, sounding more open and punchy.  
 
 ### Logarithmic  
 
 Calculates gain reduction first in log dB, and applies level envelope to gain reduction.  
+Attack/Release envelope is applied at Gain Reduction.  
 More accurate attack timing and good for peak comtrolling.  
 
 ## Lookahead  
