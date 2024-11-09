@@ -231,9 +231,9 @@ tresult PLUGIN_API RLFCMP_Processor::setupProcessing (Vst::ProcessSetup& newSetu
     for (int32 channel = 0; channel < maxChannel; channel++)
     {
         sidechain_EQed[channel].resize(newSetup.maxSamplesPerBlock);
+        level_vec     [channel].resize(newSetup.maxSamplesPerBlock);
         std::fill(sidechain_EQed[channel].begin(), sidechain_EQed[channel].end(), 0.0);
-        level_vec[channel].resize(newSetup.maxSamplesPerBlock);
-        std::fill(level_vec[channel].begin(), level_vec[channel].end(), 0.0);
+        std::fill(level_vec     [channel].begin(), level_vec     [channel].end(), 0.0);
     }
     
     call_after_SR_changed ();
@@ -754,8 +754,8 @@ void RLFCMP_Processor::call_after_SR_changed ()
     
     lookaheadSize = std::min((int)(0.5 * 0.001 * projectSR), maxLAH); // fixed lookahead at 0.5ms
 
-    for (auto& iter : lookAheadDelayLine) iter.resize(maxLAH, 0.0);
-    for (auto& iter : latencyDelayLine)   iter.resize(maxLAH, 0.0);
+    for (auto& iter : lookAheadDelayLine) { iter.resize(maxLAH, 0.0); std::fill(iter.begin(), iter.end(), 0.0); }
+    for (auto& iter : latencyDelayLine)   { iter.resize(maxLAH, 0.0); std::fill(iter.begin(), iter.end(), 0.0); }
 
     Kaiser::calcFilter2(lookaheadSize, 3.0, LAH_coef); // ((alpha * pi)/0.1102) + 8.7, alpha == 3 -> -94.22 dB
     
@@ -764,6 +764,7 @@ void RLFCMP_Processor::call_after_SR_changed ()
     hiir::PolyphaseIir2Designer::compute_coefs_spec_order_tbw (coefs, HT_order, transition);
     for (int i = 1, j = 0; i < HT_order; i += 2) HT_coefs[path_ref][j++] = coefs[i];
     for (int i = 0, j = 0; i < HT_order; i += 2) HT_coefs[path_sft][j++] = coefs[i];
+    std::fill(HT_state, HT_state + HT_STATE_RESET_SIZE, 0.0);
     
     for (int32 channel = 0; channel < maxChannel; channel++)
     {

@@ -95,6 +95,8 @@ protected:
     static SMTG_CONSTEXPR int32 y2 = 1;
     static SMTG_CONSTEXPR int32 order = 2;
     
+    static SMTG_CONSTEXPR int HT_STATE_RESET_SIZE = maxChannel * path_num * io_num * order * HT_stage;
+    
     static SMTG_CONSTEXPR int32 maxLAH = 256;
     
     static SMTG_CONSTEXPR double peakEnvDecay = 0.4; //sec, for VU meter
@@ -127,7 +129,7 @@ protected:
     
     ParamValue LAH_coef[maxLAH] = {0.0, };
     
-    static SMTG_CONSTEXPR int32 _rms = LevelEnvelopeFollower::rmsEnv;
+    static SMTG_CONSTEXPR int32 _rms  = LevelEnvelopeFollower::rmsEnv;
     static SMTG_CONSTEXPR int32 _peak = LevelEnvelopeFollower::peakEnv;
     LevelEnvelopeFollower VuInputRMS[maxChannel]   = { LevelEnvelopeFollower(_rms, peakRMSDecay),  LevelEnvelopeFollower(_rms, peakRMSDecay)};
     LevelEnvelopeFollower VuOutputRMS[maxChannel]  = { LevelEnvelopeFollower(_rms, peakRMSDecay),  LevelEnvelopeFollower(_rms, peakRMSDecay)};
@@ -141,11 +143,11 @@ protected:
     ParamValue fInputVuPeak[maxChannel] = {0.0, }, fOutputVuPeak[maxChannel] = {0.0, };
     ParamValue fDetectorLevel = 0.0;
     ParamValue fGainReduction = 0.0;
-    bool sendUI = false;
+    bool       sendUI = false;
     
     // Internal plain values =================================================
     SampleRate projectSR    = 48000.0;
-    // SampleRate internalSR   = 192000.0;//actually, not used
+    // SampleRate internalSR   = 192000.0; //actually, not used
     
     ParamValue hilbertDtrAtkCoef = std::sqrt(getTau(detectorHlbtAtk, projectSR));
     ParamValue hilbertDtrRlsCoef = getTau(detectorHlbtRls, projectSR) * getTau(detectorHlbtRls, projectSR);
