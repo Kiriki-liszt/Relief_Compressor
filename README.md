@@ -139,3 +139,39 @@ It somehow reacts like bandpassed detector signal, so this is given as an option
 When compressing, harmonic distortion happens and fills up a removed loudness.  
 With Hilbert detector, that harmonic distortion is surpressed, leading to a sence of feel that it grabs more then it should.  
 Our ears are used to hear that volume drop compensation by harmonic distortion, so when it doesn't, it feels somewhat unexpected.  
+
+## Build for macOS
+
+### git clone SDKs
+
+``` git
+git clone --recursive -b v3.8.0_build_66 https://github.com/steinbergmedia/vst3sdk.git ../vst3sdk
+git clone --recursive -b AudioUnitSDK-1.1.0 https://github.com/apple/AudioUnitSDK.git ../AudioUnitSDK
+```
+
+AudioUnitSDK v1.1.0 not v1.2.0 and later because VST3SDK rely on c++17.  
+
+### CMake configuire
+
+``` cmake
+/Applications/CMake.app/Contents/bin/cmake \
+-G Xcode \
+-S . \
+-B ./build \
+-DCMAKE_BUILD_TYPE="Release" \
+-DSMTG_AUDIOUNIT_SDK_PATH="../AudioUnitSDK" \
+-DSMTG_ENABLE_VSTGUI_SUPPORT=ON \
+```
+
+### CMake build
+
+``` cmake
+/Applications/CMake.app/Contents/bin/cmake \
+--build ./build \
+--config Release
+```
+
+### Error: No CMAKE_C_COMPILER could be found.
+
+> sudo xcode-select --reset
+

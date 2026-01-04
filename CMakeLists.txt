@@ -1,11 +1,11 @@
 cmake_minimum_required(VERSION 3.14.0)
+
+option(SMTG_ENABLE_VST3_PLUGIN_EXAMPLES "Enable VST 3 Plug-in Examples" OFF)
+option(SMTG_ENABLE_VST3_HOSTING_EXAMPLES "Enable VST 3 Hosting Examples" OFF)
+
 set(CMAKE_OSX_DEPLOYMENT_TARGET 10.13 CACHE STRING "")
 
-if(SMTG_MAC)
-    set(vst3sdk_SOURCE_DIR "/Users/yoon/VST_SDK/vst3sdk")
-elseif(SMTG_WIN)
-    set(vst3sdk_SOURCE_DIR "C:/VST_SDK/vst3sdk")
-endif(SMTG_MAC)
+set(vst3sdk_SOURCE_DIR ${CMAKE_SOURCE_DIR}/../vst3sdk)
 
 if(GITHUB_ACTIONS)
     set(vst3sdk_SOURCE_DIR ${CMAKE_SOURCE_DIR}/vst3sdk)
@@ -19,9 +19,23 @@ project(Relief_Compressor
     # This is your plug-in version number. Change it here only.
     # Version number symbols usable in C++ can be found in
     # source/version.h and ${PROJECT_BINARY_DIR}/projectversion.h.
-    VERSION 1.0.0.0
+    VERSION 2.0.0.0
     DESCRIPTION "Relief_Compressor VST 3 Plug-in"
 )
+
+# -- AudioUnitSDK --
+# include(FetchContent)
+# FetchContent_Declare(
+#     AudioUnitSDK
+#     GIT_REPOSITORY https://github.com/apple/AudioUnitSDK.git
+#     GIT_TAG        HEAD
+# )
+# FetchContent_MakeAvailable(AudioUnitSDK)
+# FetchContent_GetProperties(
+#     AudioUnitSDK
+#     SOURCE_DIR SMTG_AUDIOUNIT_SDK_PATH
+# )
+# -------------------
 
 set(SMTG_VSTGUI_ROOT "${vst3sdk_SOURCE_DIR}")
 
@@ -94,10 +108,13 @@ elseif(SMTG_WIN)
 endif(SMTG_MAC)
 
 # Add an AUv2 target
-if (SMTG_MAC AND XCODE AND SMTG_COREAUDIO_SDK_PATH)
+if (SMTG_MAC AND XCODE AND SMTG_ENABLE_AUV2_BUILDS)
+    list(APPEND CMAKE_MODULE_PATH "${vst3sdk_SOURCE_DIR}/cmake/modules")
+    include(SMTG_AddVST3AuV2)
 	smtg_target_add_auv2(Relief_Compressor-au
 		BUNDLE_NAME Relief_Compressor
 		BUNDLE_IDENTIFIER io.github.yg331.Relief.Compressor.audiounit
-		INFO_PLIST_TEMPLATE resource/au-info.plist
+		INFO_PLIST_TEMPLATE ${CMAKE_CURRENT_SOURCE_DIR}/resource/au-info.plist
 		VST3_PLUGIN_TARGET Relief_Compressor)
-endif(SMTG_MAC AND XCODE AND SMTG_COREAUDIO_SDK_PATH)
+    # smtg_target_set_debug_executable(VST3_AU_PlugIn_AU "/Applications/Reaper.app")
+endif(SMTG_MAC AND XCODE AND SMTG_ENABLE_AUV2_BUILDS)

@@ -764,7 +764,7 @@ void RLFCMP_Processor::call_after_SR_changed ()
     hiir::PolyphaseIir2Designer::compute_coefs_spec_order_tbw (coefs, HT_order, transition);
     for (int i = 1, j = 0; i < HT_order; i += 2) HT_coefs[path_ref][j++] = coefs[i];
     for (int i = 0, j = 0; i < HT_order; i += 2) HT_coefs[path_sft][j++] = coefs[i];
-    std::fill(HT_state, HT_state + HT_STATE_RESET_SIZE, 0.0);
+    std::fill(HT_state[0][0][0][0], HT_state[0][0][0][0] + HT_STATE_RESET_SIZE, 0.0);
     
     for (int32 channel = 0; channel < maxChannel; channel++)
     {

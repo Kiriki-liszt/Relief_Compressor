@@ -24,9 +24,9 @@ jobs:
     - name: Custom VSTSDK Repo checkout
       uses: actions/checkout@v4
       with:
-        repository: Kiriki-liszt/vst3sdk
-        ref: 'v3.7.9_mod'
-        path: "./vst3sdk" 
+        repository: steinbergmedia/vst3sdk
+        ref: 'v3.8.0_build_66'
+        path: "../vst3sdk" 
         submodules: 'recursive'
 
     - name: Configure CMake
@@ -38,9 +38,6 @@ jobs:
         -A x64
         -DCMAKE_BUILD_TYPE=${{ env.build-type }}
         -DSMTG_ENABLE_VSTGUI_SUPPORT=ON
-        -DSMTG_ENABLE_VST3_PLUGIN_EXAMPLES=OFF
-        -DSMTG_ENABLE_VST3_HOSTING_EXAMPLES=OFF
-        -DGITHUB_ACTIONS=ON
 
     - name: Build
       run: cmake --build ${{ github.workspace }}/${{ env.build-dir }}  --config ${{ env.build-type }}
