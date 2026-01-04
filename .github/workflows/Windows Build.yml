@@ -26,7 +26,6 @@ jobs:
       with:
         repository: steinbergmedia/vst3sdk
         ref: 'v3.8.0_build_66'
-        path: ".." 
         submodules: 'recursive'
 
     - name: Configure CMake
