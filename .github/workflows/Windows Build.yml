@@ -17,14 +17,16 @@ jobs:
 
     steps:
     - name: Base plugin Repo checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
+        path: "Relief_Compressor"
         submodules: 'recursive'
         
     - name: Custom VSTSDK Repo checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         repository: steinbergmedia/vst3sdk
+        path: "vst3sdk"
         ref: 'v3.8.0_build_66'
         submodules: 'recursive'
 
