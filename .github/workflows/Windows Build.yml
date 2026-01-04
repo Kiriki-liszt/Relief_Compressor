@@ -44,7 +44,7 @@ jobs:
       run: cmake --build ${{ github.workspace }}/main/${{ env.build-dir }}  --config ${{ env.build-type }}
         
     - name: Upload VST
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: ${{ github.event.repository.name }}-${{ matrix.os }}-${{ github.sha }}
-        path: build/VST3
+        path: main/build/VST3
